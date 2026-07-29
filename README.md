@@ -80,13 +80,25 @@ them when they live in different services.
                   the wire contract     │
 ```
 
-| | |
-| --- | --- |
-| **`Journal`** | Where the events live. Assigns an ordered id on append, returns the events after a given id — and nothing else. `Journal\Http` reads *another service's* journal, so to everything above it a remote feed and a local one are the same object. |
-| **`Feed`** | The policy on one journal: stamps `source` and `time` on append, clamps a consumer-supplied `limit`, and long-polls. Subclass it to give a feed a typed vocabulary. |
-| **`Cursor`** | Where one consumer's position is kept. Deliberately independent of `Journal` — a consumer keeps its position in *its own* storage, never the producer's. |
-| **`Consumer`** | The pull loop. Reads from the stored position, hands each event to a handler oldest-first, and advances only past events the handler accepted. |
-| **`Protocol`** | The HTTP contract — query parameters, response envelope, caching rules — held in one place so the two halves cannot drift apart. |
+**`Journal`** — where the events live. It assigns an ordered id on append and
+returns the events after a given id, and nothing else. `Journal\Http` reads
+*another service's* journal, so to everything above it a remote feed and a local
+one are the same object.
+
+**`Feed`** — the policy on one journal: stamps `source` and `time` on append,
+clamps a consumer-supplied `limit`, and long-polls. Subclass it to give a feed a
+typed vocabulary.
+
+**`Cursor`** — where one consumer's position is kept. Deliberately independent of
+`Journal`: a consumer keeps its position in *its own* storage, never the
+producer's.
+
+**`Consumer`** — the pull loop. Reads from the stored position, hands each event
+to a handler oldest-first, and advances only past the events the handler
+accepted.
+
+**`Protocol`** — the HTTP contract: query parameters, response envelope and
+caching rules, held in one place so the two halves cannot drift apart.
 
 The structural consequence worth knowing up front: **the producer stores no
 per-consumer state at all.** That is what makes adding a consumer free, and it is
