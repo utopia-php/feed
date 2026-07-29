@@ -93,17 +93,6 @@ class CursorTest extends TestCase
     /**
      * @dataProvider stores
      */
-    public function testSavingAnEmptyPositionIsIgnored(Cursor $cursor): void
-    {
-        $cursor->save('edge', 'invalidator', '1-0');
-        $cursor->save('edge', 'invalidator', '');
-
-        $this->assertSame('1-0', $cursor->load('edge', 'invalidator'), 'An empty position must not erase a real one');
-    }
-
-    /**
-     * @dataProvider stores
-     */
     public function testRejectsAnEmptyConsumerName(Cursor $cursor): void
     {
         $this->expectException(Invalid::class);

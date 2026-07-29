@@ -6,12 +6,6 @@ namespace Utopia\Feed\Cursor;
 
 use Utopia\Feed\Cursor;
 
-/**
- * Positions held in process memory.
- *
- * For tests, and for a consumer that genuinely wants to start from the
- * beginning of the retained feed on every restart.
- */
 class Memory extends Cursor
 {
     /** @var array<string, string> */
@@ -24,10 +18,6 @@ class Memory extends Cursor
 
     public function save(string $feed, string $consumer, string $eventId): void
     {
-        if ($eventId === '') {
-            return;
-        }
-
         $this->cursors[$this->key($feed, $consumer)] = $eventId;
     }
 

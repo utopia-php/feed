@@ -7,14 +7,6 @@ namespace Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor;
 use Utopia\Pools\Pool as UtopiaPool;
 
-/**
- * {@see Redis}, over a pooled connection.
- *
- * Pairs with {@see \Utopia\Feed\Journal\Pool}, and can share its pool: a cursor
- * read is one `GET`, so it borrows a connection only for as long as that takes.
- *
- * @see https://github.com/utopia-php/pools
- */
 class Pool extends Cursor
 {
     /**
