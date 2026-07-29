@@ -111,18 +111,14 @@ class ConsumerTest extends TestCase
 
         $consumer = $this->consumer($cursor);
 
-        // Restores the position, then advances — the advance reads once more to
-        // check it is not moving the position backwards.
+        // One read on the first pass to restore the position; the two
+        // caught-up polls after it must not touch the store at all, which is
+        // what keeps an idle consumer on a timer free.
         $consumer->consume(fn (CloudEvent $event) => null);
-        $settled = $cursor->loads;
-
-        // Caught up: nothing handled, so nothing saved, so nothing read. This
-        // is the property that matters — an idle consumer polling on a timer
-        // does not touch its store at all.
         $consumer->consume(fn (CloudEvent $event) => null);
         $consumer->consume(fn (CloudEvent $event) => null);
 
-        $this->assertSame($settled, $cursor->loads, 'A caught-up poll must not read the store');
+        $this->assertSame(1, $cursor->loads);
     }
 
     public function testStopsAtTheFirstFailureAndLeavesThePositionBeforeIt(): void

@@ -6,6 +6,7 @@ namespace Utopia\Feed\Journal;
 
 use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Id;
 
@@ -34,6 +35,7 @@ class Redis extends Journal
      *        matters: a consumer down for longer than its feed's retention
      *        resumes from the oldest event it can, rather than from where it
      *        left off.
+     * @throws Invalid When $name is empty, or $maxSize is below one event.
      */
     public function __construct(
         protected readonly \Redis|\RedisCluster $redis,

@@ -87,15 +87,11 @@ abstract class Journal
     }
 
     /**
-     * Guard a retention cap.
+     * Guard a retention cap, at construction.
      *
-     * Non-positive values do not mean "no retention" — they mean something
-     * different on every backend, and nothing useful on any. Redis reads
-     * `MAXLEN 0` as "trim everything", so a feed would accept appends and
-     * retain none of them; `array_slice($events, -0)` is `array_slice($events,
-     * 0)`, so the in-memory journal would do the exact opposite and retain the
-     * lot, unbounded. A cap that silently means one thing here and the reverse
-     * there is worse than no cap, so it is rejected at construction.
+     * A feed must retain at least one event. Backends disagree about what a
+     * non-positive cap means — some keep nothing, some keep everything — so it
+     * is refused here rather than resolved differently on each one.
      *
      * @throws Invalid When $maxSize would retain fewer than one event.
      */

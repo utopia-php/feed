@@ -383,10 +383,9 @@ class FeedTest extends TestCase
     }
 
     /**
-     * A non-positive cap means the opposite thing on each backend — Redis reads
-     * `MAXLEN 0` as "keep nothing", while `array_slice($events, -0)` keeps
-     * everything — so it is refused rather than silently honoured one way here
-     * and the other way in production.
+     * Backends disagree about what a non-positive cap means — some keep
+     * nothing, some keep everything — so it is refused at construction rather
+     * than resolved one way in a test and the other way in production.
      *
      * @dataProvider unusableRetention
      */

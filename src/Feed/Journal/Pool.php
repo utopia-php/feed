@@ -6,6 +6,7 @@ namespace Utopia\Feed\Journal;
 
 use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Exception\Invalid;
 use Utopia\Pools\Pool as UtopiaPool;
 
 /**
@@ -23,6 +24,7 @@ class Pool extends Journal
      * @param UtopiaPool<\Redis|\RedisCluster> $pool
      * @param string $name Feed name; the stream is stored at `feed:<name>`.
      * @param int $maxSize Approximate cap on retained events.
+     * @throws Invalid When $name is empty, or $maxSize is below one event.
      */
     public function __construct(
         protected readonly UtopiaPool $pool,

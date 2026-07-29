@@ -22,17 +22,12 @@ use Utopia\CloudEvents\CloudEvent;
  * ## What the handler must tolerate
  *
  * Delivery is at-least-once, so a handler will see the same event more than
- * once and must be safe to repeat. There are four separate reasons, and no
+ * once and must be safe to repeat. There are three separate reasons, and no
  * arrangement of this class removes any of them:
  *
  * 1. A handler can succeed and the position then fail to save.
  * 2. A batch interrupted partway replays from the last event that succeeded.
  * 3. A consumer whose position is lost restarts from the oldest retained event.
- * 4. Two processes sharing a consumer name can interleave inside
- *    {@see Cursor::save()} and leave the older position stored, re-delivering
- *    what the newer one had already handled. Not possible on
- *    {@see Cursor\Redis} or {@see Cursor\Pool}, where the store refuses a
- *    stale position atomically.
  *
  * Every one of them re-delivers; none of them skips. That asymmetry is the
  * whole design — an event handled twice is absorbed by an idempotent handler,
@@ -86,16 +81,12 @@ class Consumer
      * @param string $name This consumer's name, which its position is stored
      *        under. Distinct per logical consumer, and stable across restarts.
      *
-     *        **One process per name.** Two processes sharing a name each skip
-     *        what the other handled, because neither sees the other's work
-     *        before reading its own position. That is wasted effort, not lost
-     *        events — delivery is at-least-once and handlers must tolerate a
-     *        repeat regardless.
-     *
-     *        The overlap a rolling restart creates is therefore safe, and
-     *        {@see Cursor::save()} additionally refuses to move a stored
-     *        position backwards, so the departing process cannot undo the
-     *        arriving one's progress.
+     *        **One process per name.** Two sharing a name share one position,
+     *        so each sees only the events the other has not already advanced
+     *        past — the feed is split between them rather than delivered to
+     *        both, which is not what a handler written against this class
+     *        expects. Give each replica the same name only if you mean them to
+     *        divide the work.
      * @param Cursor $cursor Where to keep the position.
      * @param int $batch Events per run.
      * @param int $timeout Milliseconds to wait for an event when the feed is

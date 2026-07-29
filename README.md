@@ -303,19 +303,9 @@ a warning rather than a failure: it keeps its position in memory and carries on,
 and only a restart before the store recovers replays anything. Pass
 `onWarning()` to hear about it.
 
-A position never moves **backwards**. Run one process per consumer name — but a
-rolling restart briefly overlaps two, and without this the departing one
-finishing a shorter batch would land its older position last and undo the
-arriving one's progress. Positions are totally ordered, so `save()` drops
-anything that is not an advance.
-
-`Cursor\Redis` and `Cursor\Pool` enforce that **atomically**, by storing the
-position as the id of a one-entry Redis stream: a feed position *is* a stream
-id, and Redis itself refuses an `XADD` that is not newer than the stream's top.
-The check and the write are one operation, so two processes racing cannot both
-believe they are ahead. Other stores compare before writing, which leaves a
-sub-millisecond window; losing that race costs a replay, which every handler
-must already tolerate.
+Run **one process per consumer name.** Two sharing a name share one position, so
+each sees only the events the other has not already advanced past — the feed is
+split between them rather than delivered to both.
 
 ## Events
 
@@ -359,16 +349,12 @@ is specified to carry.
 
 ## Delivery semantics
 
-**A handler must be safe to run twice on the same event.** There are four
+**A handler must be safe to run twice on the same event.** There are three
 independent reasons, and no arrangement of this library removes any of them:
 
 1. A handler can succeed and the position then fail to save.
 2. A run interrupted partway resumes from the last event that succeeded.
 3. A consumer whose position was lost restarts from the oldest retained event.
-4. Two processes sharing a consumer name can interleave inside `Cursor::save()`
-   and leave the older position stored, re-delivering what the newer one had
-   already handled. Not possible on `Cursor\Redis` or `Cursor\Pool`, which
-   refuse a stale position atomically.
 
 Every one of them **re-delivers; none of them skips.** That asymmetry is the
 whole design — an event handled twice is absorbed by an idempotent handler,

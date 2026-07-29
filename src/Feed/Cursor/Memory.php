@@ -25,7 +25,7 @@ class Memory extends Cursor
 
     public function save(string $consumer, string $eventId): void
     {
-        if (!$this->shouldAdvance($consumer, $eventId)) {
+        if ($eventId === '') {
             return;
         }
 

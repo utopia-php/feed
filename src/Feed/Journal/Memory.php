@@ -6,6 +6,7 @@ namespace Utopia\Feed\Journal;
 
 use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Id;
 
 /**
@@ -33,6 +34,9 @@ class Memory extends Journal
 
     private int $sequence = -1;
 
+    /**
+     * @throws Invalid When $name is empty, or $maxSize is below one event.
+     */
     public function __construct(string $name, protected readonly int $maxSize = 100_000)
     {
         parent::__construct($name);
