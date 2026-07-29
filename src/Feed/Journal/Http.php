@@ -8,7 +8,6 @@ use Psr\Http\Client\ClientExceptionInterface;
 use Utopia\Client\Adapter;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
-use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Journal;
 use Utopia\Feed\Protocol;
 use Utopia\Psr7\ContentType;
@@ -28,11 +27,6 @@ class Http extends Journal
         parent::__construct($name);
 
         $this->requests = new RequestFactory();
-    }
-
-    public function append(CloudEvent $event): string
-    {
-        throw new Unsupported("The {$this->name} feed is read over HTTP and cannot be appended to");
     }
 
     public function read(?string $lastEventId, int $limit): array

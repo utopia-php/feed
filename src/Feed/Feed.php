@@ -6,45 +6,21 @@ namespace Utopia\Feed;
 
 use Utopia\CloudEvents\CloudEvent;
 
+// Server and client class: the read view of a feed — read and long-poll.
+// Server serves its own feed with this; client reads a remote one through Journal\Http.
 class Feed
 {
     public const int MAX_BATCH = 1000;
 
     public const int MAX_TIMEOUT = 30_000;
 
-    public function __construct(
-        protected readonly Journal $journal,
-        protected readonly string $source = '',
-    ) {
+    public function __construct(protected readonly Journal $journal)
+    {
     }
 
     public function getName(): string
     {
         return $this->journal->getName();
-    }
-
-    public function append(string $type, mixed $data = [], string $subject = ''): string
-    {
-        return $this->publish(new CloudEvent(
-            type: $type,
-            subject: $subject === '' ? null : $subject,
-            data: $data,
-        ));
-    }
-
-    public function publish(CloudEvent $event): string
-    {
-        if ($event->type === '') {
-            throw new Exception\Invalid('Feed event type is required');
-        }
-
-        if ($this->source === '') {
-            throw new Exception\Invalid('Feed source is required to append; construct the feed with one');
-        }
-
-        $event = $event->withSource($this->source);
-
-        return $this->journal->append($event->time === '' ? $event->withTime() : $event);
     }
 
     /** @return list<CloudEvent> */

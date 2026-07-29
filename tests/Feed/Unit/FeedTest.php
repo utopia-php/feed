@@ -11,6 +11,7 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
+use Utopia\Feed\Producer;
 use Utopia\Feed\Id;
 
 class FeedTest extends TestCase
@@ -19,22 +20,18 @@ class FeedTest extends TestCase
 
     private Feed $feed;
 
+    private Producer $producer;
+
     protected function setUp(): void
     {
         $this->journal = new Memory('edge');
-        $this->feed = new Feed($this->journal, 'urn:appwrite:cloud:fra');
-    }
-
-    public function testAppendReturnsAPosition(): void
-    {
-        $id = $this->feed->append('io.appwrite.edge.invalidate', ['tags' => ['project' => 'p1']]);
-
-        $this->assertTrue(Id::isValid($id));
+        $this->producer = new Producer($this->journal, 'urn:appwrite:cloud:fra');
+        $this->feed = new Feed($this->journal);
     }
 
     public function testReadsBackWhatWasAppended(): void
     {
-        $this->feed->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
+        $this->producer->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
 
         $events = $this->feed->read();
 
@@ -44,35 +41,10 @@ class FeedTest extends TestCase
         $this->assertSame(['tags' => ['domain' => 'example.com']], $events[0]->data);
     }
 
-    public function testStampsTheSourceAndTimeOnAppend(): void
-    {
-        $this->feed->append('test');
-
-        $event = $this->feed->read()[0];
-
-        $this->assertSame('urn:appwrite:cloud:fra', $event->source);
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/', $event->time);
-    }
-
-    /**
-     * Recording it at append rather than at read keeps it correct for a feed
-     * read back somewhere other than where it was written.
-     */
-    public function testKeepsTheSourceOfTheProducerThatAppended(): void
-    {
-        (new Feed($this->journal, 'urn:appwrite:cloud:fra'))->append('test');
-        (new Feed($this->journal, 'urn:appwrite:cloud:nyc'))->append('test');
-
-        $events = (new Feed($this->journal, 'urn:appwrite:cloud:syd'))->read();
-
-        $this->assertSame('urn:appwrite:cloud:fra', $events[0]->source);
-        $this->assertSame('urn:appwrite:cloud:nyc', $events[1]->source);
-    }
-
     public function testEventsComeBackOldestFirst(): void
     {
         foreach (['a', 'b', 'c'] as $type) {
-            $this->feed->append($type);
+            $this->producer->append($type);
         }
 
         $this->assertSame(['a', 'b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $this->feed->read()));
@@ -82,7 +54,7 @@ class FeedTest extends TestCase
     {
         $ids = [];
         for ($i = 0; $i < 50; $i++) {
-            $ids[] = $this->feed->append('test');
+            $ids[] = $this->producer->append('test');
         }
 
         $this->assertSame($ids, \array_unique($ids), 'Positions must be unique');
@@ -94,8 +66,8 @@ class FeedTest extends TestCase
 
     public function testReadsStrictlyAfterTheGivenPosition(): void
     {
-        $first = $this->feed->append('a');
-        $this->feed->append('b');
+        $first = $this->producer->append('a');
+        $this->producer->append('b');
 
         $events = $this->feed->read($first);
 
@@ -105,16 +77,16 @@ class FeedTest extends TestCase
 
     public function testReadFromTheLastEventIsEmpty(): void
     {
-        $this->feed->append('a');
-        $last = $this->feed->append('b');
+        $this->producer->append('a');
+        $last = $this->producer->append('b');
 
         $this->assertSame([], $this->feed->read($last));
     }
 
     public function testNullPositionReadsFromTheOldestRetainedEvent(): void
     {
-        $this->feed->append('a');
-        $this->feed->append('b');
+        $this->producer->append('a');
+        $this->producer->append('b');
 
         $this->assertCount(2, $this->feed->read(null));
     }
@@ -122,7 +94,7 @@ class FeedTest extends TestCase
     public function testHonoursTheLimit(): void
     {
         foreach (\range(1, 10) as $i) {
-            $this->feed->append('test');
+            $this->producer->append('test');
         }
 
         $this->assertCount(3, $this->feed->read(null, 3));
@@ -135,7 +107,7 @@ class FeedTest extends TestCase
      */
     public function testClampsTheLimitToTheMaximum(): void
     {
-        $this->feed->append('test');
+        $this->producer->append('test');
 
         $this->assertCount(1, $this->feed->read(null, Feed::MAX_BATCH * 10));
         $this->assertCount(1, $this->feed->read(null, 0));
@@ -150,60 +122,13 @@ class FeedTest extends TestCase
     }
 
     /**
-     * CloudEvents requires a source, and a feed that stamped an empty one would
-     * produce events no consumer can attribute — so it is refused rather than
-     * appended.
-     */
-    public function testRejectsAnAppendToAFeedWithNoSource(): void
-    {
-        $feed = new Feed(new Memory('edge'));
-
-        $this->expectException(Invalid::class);
-
-        $feed->append('test');
-    }
-
-    public function testRejectsAnEmptyEventType(): void
-    {
-        $this->expectException(Invalid::class);
-
-        $this->feed->append('');
-    }
-
-    public function testRejectsAPayloadThatCannotBeEncoded(): void
-    {
-        $this->expectException(Invalid::class);
-
-        $this->feed->append('test', ['resource' => \fopen('php://memory', 'r')]);
-    }
-
-    public function testPublishStampsAPreparedEvent(): void
-    {
-        $id = $this->feed->publish(new CloudEvent(id: 'ignored', type: 'test', data: ['a' => 'b'], subject: 's'));
-
-        $event = $this->feed->read()[0];
-
-        $this->assertSame($id, $event->id);
-        $this->assertNotSame('ignored', $event->id, 'The backend assigns the position, not the caller');
-        $this->assertSame('urn:appwrite:cloud:fra', $event->source);
-        $this->assertSame(['a' => 'b'], $event->data);
-    }
-
-    public function testPublishKeepsATimeTheCallerSet(): void
-    {
-        $this->feed->publish(new CloudEvent(id: '', type: 'test', time: '2020-01-01T00:00:00.000Z'));
-
-        $this->assertSame('2020-01-01T00:00:00.000Z', $this->feed->read()[0]->time);
-    }
-
-    /**
      * A producer that attaches a `traceparent` means it to reach the consumer.
      * Stamping the event on publish rebuilds it, and storing it flattens it, so
      * either step could quietly drop an attribute this library does not model.
      */
     public function testExtensionAttributesSurviveAppendAndRead(): void
     {
-        $this->feed->publish(new CloudEvent(
+        $this->producer->publish(new CloudEvent(
             id: '',
             type: 'test',
             extensions: ['traceparent' => '00-abc-def-01', 'retrycount' => 2],
@@ -213,7 +138,6 @@ class FeedTest extends TestCase
 
         $this->assertSame('00-abc-def-01', $event->getExtension('traceparent'));
         $this->assertSame(2, $event->getExtension('retrycount'));
-        $this->assertSame('urn:appwrite:cloud:fra', $event->source, 'Stamping still happened');
     }
 
     /**
@@ -224,7 +148,7 @@ class FeedTest extends TestCase
      */
     public function testADigitsOnlyExtensionNameSurvivesAppendAndRead(): void
     {
-        $this->feed->publish(new CloudEvent(
+        $this->producer->publish(new CloudEvent(
             id: '',
             type: 'test',
             extensions: ['123' => 'digits', 'trace' => 'ok'],
@@ -238,7 +162,7 @@ class FeedTest extends TestCase
 
     public function testDataschemaSurvivesAppendAndRead(): void
     {
-        $this->feed->publish(new CloudEvent(
+        $this->producer->publish(new CloudEvent(
             id: '',
             type: 'test',
             dataschema: 'https://example.com/schema.json',
@@ -273,7 +197,7 @@ class FeedTest extends TestCase
      */
     public function testAnyJsonPayloadSurvivesTheRoundTrip(mixed $data): void
     {
-        $this->feed->append('test', $data);
+        $this->producer->append('test', $data);
 
         $this->assertSame($data, $this->feed->read()[0]->data);
     }
@@ -284,21 +208,21 @@ class FeedTest extends TestCase
      */
     public function testAnEventWithNoSubjectHasANullSubject(): void
     {
-        $this->feed->append('test');
+        $this->producer->append('test');
 
         $this->assertNull($this->feed->read()[0]->subject);
     }
 
     public function testASubjectSurvivesAppendAndRead(): void
     {
-        $this->feed->append('test', [], 'example.com');
+        $this->producer->append('test', [], 'example.com');
 
         $this->assertSame('example.com', $this->feed->read()[0]->subject);
     }
 
     public function testPollReturnsImmediatelyWhenEventsAreWaiting(): void
     {
-        $this->feed->append('test');
+        $this->producer->append('test');
 
         $started = \microtime(true);
         $events = $this->feed->poll(null, 10, 2000);
@@ -328,10 +252,12 @@ class FeedTest extends TestCase
 
     public function testRetentionIsBoundedAndTrimsTheOldest(): void
     {
-        $feed = new Feed(new Memory('small', maxSize: 3), 'urn:appwrite:cloud:fra');
+        $journal = new Memory('small', maxSize: 3);
+        $producer = new Producer($journal, 'urn:appwrite:cloud:fra');
+        $feed = new Feed($journal);
 
         foreach (['a', 'b', 'c', 'd', 'e'] as $type) {
-            $feed->append($type);
+            $producer->append($type);
         }
 
         $this->assertSame(['c', 'd', 'e'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read()));
@@ -343,11 +269,13 @@ class FeedTest extends TestCase
      */
     public function testAPositionBelowTheTrimHorizonReadsWhatIsLeft(): void
     {
-        $feed = new Feed(new Memory('small', maxSize: 2), 'urn:appwrite:cloud:fra');
+        $journal = new Memory('small', maxSize: 2);
+        $producer = new Producer($journal, 'urn:appwrite:cloud:fra');
+        $feed = new Feed($journal);
 
-        $first = $feed->append('a');
-        $feed->append('b');
-        $feed->append('c');
+        $first = $producer->append('a');
+        $producer->append('b');
+        $producer->append('c');
 
         $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read($first)));
     }
@@ -355,15 +283,6 @@ class FeedTest extends TestCase
     public function testExposesTheFeedItReads(): void
     {
         $this->assertSame('edge', $this->feed->getName());
-    }
-
-    public function testAFeedWithNoBackendFailsLoudlyRatherThanDroppingEvents(): void
-    {
-        $feed = new Feed(new None('edge'), 'urn:appwrite:cloud:fra');
-
-        $this->expectException(Unsupported::class);
-
-        $feed->append('test');
     }
 
     public function testAFeedWithNoBackendCannotBeRead(): void
@@ -384,10 +303,12 @@ class FeedTest extends TestCase
 
     public function testAcceptsTheSmallestUsefulRetentionCap(): void
     {
-        $feed = new Feed(new Memory('edge', maxSize: 1), 'urn:appwrite:cloud:fra');
+        $journal = new Memory('edge', maxSize: 1);
+        $producer = new Producer($journal, 'urn:appwrite:cloud:fra');
+        $feed = new Feed($journal);
 
-        $feed->append('a');
-        $feed->append('b');
+        $producer->append('a');
+        $producer->append('b');
 
         $events = $feed->read();
 

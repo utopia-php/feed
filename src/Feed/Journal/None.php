@@ -6,9 +6,10 @@ namespace Utopia\Feed\Journal;
 
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Unsupported;
+use Utopia\Feed\Appendable;
 use Utopia\Feed\Journal;
 
-class None extends Journal
+class None extends Journal implements Appendable
 {
     public function __construct(string $name = 'none')
     {

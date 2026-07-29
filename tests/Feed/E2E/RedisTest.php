@@ -11,6 +11,7 @@ use Utopia\Feed\Cursor\Redis as RedisCursor;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Feed;
+use Utopia\Feed\Producer;
 use Utopia\Feed\Id;
 
 /**
@@ -49,7 +50,12 @@ class RedisTest extends TestCase
 
     private function feed(int $maxSize = 100_000): Feed
     {
-        return new Feed(new RedisJournal($this->redis, $this->name, $maxSize), 'urn:test:e2e');
+        return new Feed(new RedisJournal($this->redis, $this->name, $maxSize));
+    }
+
+    private function producer(int $maxSize = 100_000): Producer
+    {
+        return new Producer(new RedisJournal($this->redis, $this->name, $maxSize), 'urn:test:e2e');
     }
 
     public function testAppendsAndReadsBack(): void
@@ -71,7 +77,7 @@ class RedisTest extends TestCase
 
     public function testStreamIdsMatchTheFormatPositionsAreParsedWith(): void
     {
-        $id = $this->feed()->append('test');
+        $id = $this->producer()->append('test');
 
         $this->assertTrue(Id::isValid($id), "Redis returned an id this library cannot page from: {$id}");
     }
@@ -113,7 +119,7 @@ class RedisTest extends TestCase
 
     public function testExtensionsAndDataschemaSurviveTheRoundTrip(): void
     {
-        $this->feed()->publish(new CloudEvent(
+        $this->producer()->publish(new CloudEvent(
             id: '',
             type: 'test',
             dataschema: 'https://example.com/schema.json',
@@ -128,14 +134,14 @@ class RedisTest extends TestCase
 
     public function testAnAbsentSubjectStaysAbsent(): void
     {
-        $this->feed()->append('test');
+        $this->producer()->append('test');
 
         $this->assertNull($this->feed()->read()[0]->subject);
     }
 
     public function testAScalarPayloadSurvivesTheRoundTrip(): void
     {
-        $this->feed()->append('test', 'a string');
+        $this->producer()->append('test', 'a string');
 
         $this->assertSame('a string', $this->feed()->read()[0]->data);
     }
@@ -149,7 +155,7 @@ class RedisTest extends TestCase
             'unicode' => 'ünïcøde ✓',
         ];
 
-        $this->feed()->append('test', $data);
+        $this->producer()->append('test', $data);
 
         $this->assertSame($data, $this->feed()->read()[0]->data);
     }
@@ -180,6 +186,7 @@ class RedisTest extends TestCase
     public function testAPositionBelowTheTrimHorizonReadsWhatIsLeft(): void
     {
         $feed = $this->feed(maxSize: 10);
+        $producer = $this->producer(maxSize: 10);
 
         $first = $feed->append('first');
 

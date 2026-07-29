@@ -8,7 +8,9 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\CloudEvents\Exception as CloudEventsException;
 use Utopia\Feed\Exception\Invalid;
 
-// Server class: Durable storage for events
+// Server class: durable storage for the events — Journal\Redis, Pool, Memory.
+// Client exception: Journal\Http, which reads another service's feed over the wire.
+// Journals that own their events also implement Appendable.
 abstract class Journal
 {
     protected const int POLL_INTERVAL = 500_000; // 0.5s
@@ -24,8 +26,6 @@ abstract class Journal
     {
         return $this->name;
     }
-
-    abstract public function append(CloudEvent $event): string;
 
     /** @return list<CloudEvent> */
     abstract public function read(?string $lastEventId, int $limit): array;

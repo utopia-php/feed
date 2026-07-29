@@ -6,9 +6,10 @@ namespace Utopia\Feed\Journal;
 
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Id;
+use Utopia\Feed\Appendable;
 use Utopia\Feed\Journal;
 
-class Memory extends Journal
+class Memory extends Journal implements Appendable
 {
     /** @var list<CloudEvent> */
     private array $events = [];

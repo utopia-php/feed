@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Utopia\Feed\Journal;
 
 use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Appendable;
 use Utopia\Feed\Journal;
 use Utopia\Pools\Pool as UtopiaPool;
 
-class Pool extends Journal
+class Pool extends Journal implements Appendable
 {
     /**
      * @param UtopiaPool<\Redis|\RedisCluster> $pool

@@ -13,6 +13,7 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Feed;
+use Utopia\Feed\Producer;
 use Utopia\Tests\Unit\Support\FailingCursor;
 
 class ConsumerTest extends TestCase
@@ -21,12 +22,15 @@ class ConsumerTest extends TestCase
 
     private Feed $feed;
 
+    private Producer $producer;
+
     private MemoryCursor $cursor;
 
     protected function setUp(): void
     {
         $this->journal = new MemoryJournal('edge');
-        $this->feed = new Feed($this->journal, 'urn:test');
+        $this->producer = new Producer($this->journal, 'urn:test');
+        $this->feed = new Feed($this->journal);
         $this->cursor = new MemoryCursor();
     }
 
@@ -51,8 +55,8 @@ class ConsumerTest extends TestCase
 
     public function testHandlesEachEventAndAdvancesPastTheLastOne(): void
     {
-        $this->feed->append('a');
-        $last = $this->feed->append('b');
+        $this->producer->append('a');
+        $last = $this->producer->append('b');
 
         $consumer = $this->consumer();
 
@@ -64,7 +68,7 @@ class ConsumerTest extends TestCase
 
     public function testCaughtUpConsumerDoesNothing(): void
     {
-        $this->feed->append('a');
+        $this->producer->append('a');
 
         $consumer = $this->consumer();
         $consumer->consume(fn (CloudEvent $event) => null);
@@ -74,8 +78,8 @@ class ConsumerTest extends TestCase
 
     public function testResumesFromTheStoredPosition(): void
     {
-        $first = $this->feed->append('a');
-        $this->feed->append('b');
+        $first = $this->producer->append('a');
+        $this->producer->append('b');
 
         $this->cursor->save('edge', 'invalidator', $first);
 
@@ -89,15 +93,15 @@ class ConsumerTest extends TestCase
      */
     public function testAConsumerWithNoPositionStartsAtTheOldestEventNotTheTip(): void
     {
-        $this->feed->append('a');
-        $this->feed->append('b');
+        $this->producer->append('a');
+        $this->producer->append('b');
 
         $this->assertSame(['a', 'b'], $this->drain($this->consumer()));
     }
 
     public function testReadsTheStoreOnceAndThenTracksThePositionInMemory(): void
     {
-        $this->feed->append('a');
+        $this->producer->append('a');
 
         $cursor = new class () extends MemoryCursor {
             public int $loads = 0;
@@ -124,9 +128,9 @@ class ConsumerTest extends TestCase
 
     public function testStopsAtTheFirstFailureAndLeavesThePositionBeforeIt(): void
     {
-        $first = $this->feed->append('a');
-        $this->feed->append('b');
-        $this->feed->append('c');
+        $first = $this->producer->append('a');
+        $this->producer->append('b');
+        $this->producer->append('c');
 
         $consumer = $this->consumer();
         $seen = [];
@@ -150,8 +154,8 @@ class ConsumerTest extends TestCase
 
     public function testRetriesTheFailedEventOnTheNextRun(): void
     {
-        $this->feed->append('a');
-        $this->feed->append('b');
+        $this->producer->append('a');
+        $this->producer->append('b');
 
         $consumer = $this->consumer();
         $attempts = 0;
@@ -178,7 +182,7 @@ class ConsumerTest extends TestCase
      */
     public function testAFailureOnTheFirstEventCommitsNothing(): void
     {
-        $this->feed->append('a');
+        $this->producer->append('a');
 
         try {
             $this->consumer()->consume(fn (CloudEvent $event) => throw new \RuntimeException('nope'));
@@ -191,9 +195,9 @@ class ConsumerTest extends TestCase
 
     public function testAHandlerThatAcceptsEverythingCountsEveryEvent(): void
     {
-        $this->feed->append('a');
-        $this->feed->append('b');
-        $this->feed->append('c');
+        $this->producer->append('a');
+        $this->producer->append('b');
+        $this->producer->append('c');
 
         $this->assertSame(3, $this->consumer()->consume(fn (CloudEvent $event) => null));
     }
@@ -201,7 +205,7 @@ class ConsumerTest extends TestCase
     public function testDrainsABacklogInBatches(): void
     {
         foreach (\range(1, 10) as $i) {
-            $this->feed->append('event-' . $i);
+            $this->producer->append('event-' . $i);
         }
 
         $consumer = $this->consumer(batch: 4);
@@ -219,7 +223,7 @@ class ConsumerTest extends TestCase
      */
     public function testAPositionThatCannotBeLoadedStopsTheRun(): void
     {
-        $this->feed->append('a');
+        $this->producer->append('a');
 
         $consumer = $this->consumer(new FailingCursor(onLoad: true));
         $seen = [];
@@ -242,7 +246,7 @@ class ConsumerTest extends TestCase
      */
     public function testAFailedLoadIsRetriedOnTheNextRun(): void
     {
-        $this->feed->append('a');
+        $this->producer->append('a');
 
         $cursor = new class () extends MemoryCursor {
             public bool $fail = true;
@@ -276,8 +280,8 @@ class ConsumerTest extends TestCase
      */
     public function testAPositionThatCannotBeSavedIsRaisedAfterTheEventsAreHandled(): void
     {
-        $this->feed->append('a');
-        $this->feed->append('b');
+        $this->producer->append('a');
+        $this->producer->append('b');
 
         $consumer = $this->consumer(new FailingCursor(onSave: true));
         $seen = [];
@@ -297,8 +301,8 @@ class ConsumerTest extends TestCase
 
     public function testResetReplaysEverythingStillRetained(): void
     {
-        $this->feed->append('a');
-        $this->feed->append('b');
+        $this->producer->append('a');
+        $this->producer->append('b');
 
         $consumer = $this->consumer();
         $consumer->consume(fn (CloudEvent $event) => null);
@@ -312,7 +316,7 @@ class ConsumerTest extends TestCase
 
     public function testConsumersOfTheSameFeedTrackSeparatePositions(): void
     {
-        $this->feed->append('a');
+        $this->producer->append('a');
 
         $one = new Consumer($this->feed, 'one', $this->cursor);
         $two = new Consumer($this->feed, 'two', $this->cursor);
@@ -345,8 +349,8 @@ class ConsumerTest extends TestCase
      */
     public function testAFailedReadLeavesThePositionAlone(): void
     {
-        $first = $this->feed->append('a');
-        $this->feed->append('b');
+        $first = $this->producer->append('a');
+        $this->producer->append('b');
         $this->cursor->save('edge', 'invalidator', $first);
 
         $consumer = new Consumer(new Feed(new \Utopia\Feed\Journal\None('edge')), 'invalidator', $this->cursor);

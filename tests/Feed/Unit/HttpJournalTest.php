@@ -13,7 +13,6 @@ use Utopia\Feed\Cursor\Memory as MemoryCursor;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
-use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
 use Utopia\Tests\Unit\Support\FakeTransport;
@@ -217,16 +216,6 @@ class HttpJournalTest extends TestCase
         $this->expectException(Invalid::class);
 
         $feed->read();
-    }
-
-    public function testCannotAppendToAFeedItDoesNotOwn(): void
-    {
-        $journal = new Http(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds', 'edge');
-        $feed = new Feed($journal, 'urn:appwrite:edge:fra');
-
-        $this->expectException(Unsupported::class);
-
-        $feed->append('io.appwrite.edge.invalidate');
     }
 
     /**

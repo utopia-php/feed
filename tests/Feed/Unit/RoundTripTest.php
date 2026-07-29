@@ -13,6 +13,7 @@ use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Feed;
+use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
 use Utopia\Tests\Unit\Support\FeedServer;
 
@@ -24,7 +25,7 @@ use Utopia\Tests\Unit\Support\FeedServer;
  */
 class RoundTripTest extends TestCase
 {
-    private Feed $producer;
+    private Producer $producer;
 
     private Feed $consumerFeed;
 
@@ -34,8 +35,9 @@ class RoundTripTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->producer = new Feed(new MemoryJournal('edge'), 'urn:appwrite:cloud:fra');
-        $this->server = new FeedServer($this->producer);
+        $journal = new MemoryJournal('edge');
+        $this->producer = new Producer($journal, 'urn:appwrite:cloud:fra');
+        $this->server = new FeedServer(new Feed($journal));
 
         $this->consumerFeed = new Feed(
             new Http($this->server, 'https://cloud.example.com/v1/feeds', 'edge')

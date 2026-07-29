@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
-// Client class: Read what has been missed from journal
+// Client class: the pull loop — reads what it has not seen and records how far it got.
+// Also runs server-side, when a job inside the producer consumes the feed it produces.
 class Consumer
 {
     public const int BATCH = 100;

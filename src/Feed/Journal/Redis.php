@@ -7,9 +7,10 @@ namespace Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Id;
+use Utopia\Feed\Appendable;
 use Utopia\Feed\Journal;
 
-class Redis extends Journal
+class Redis extends Journal implements Appendable
 {
     public function __construct(
         protected readonly \Redis|\RedisCluster $redis,

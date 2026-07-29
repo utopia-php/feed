@@ -6,7 +6,8 @@ namespace Utopia\Feed;
 
 use Utopia\Feed\Exception\Invalid;
 
-// Client class: Remember position of feed that has already been consumed
+// Client class: where a consumer keeps its position — the server stores nothing per consumer.
+// Cursor\Cache for a consumer reading a remote feed, Cursor\Redis or Pool for one inside the producer.
 abstract class Cursor
 {
     /**
