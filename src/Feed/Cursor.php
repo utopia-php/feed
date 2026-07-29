@@ -76,41 +76,31 @@ abstract class Cursor
      * ({@see Id::compare()}), so "never backwards" is decidable here in a way it
      * is not for a cursor store in general.
      *
-     * ## The check is not atomic
+     * ## How strongly that holds depends on the store
      *
-     * It reads, compares, then writes. Two processes can interleave inside that
-     * window, both decide they are ahead, and leave the older position stored.
+     * {@see Cursor\Redis} and {@see Cursor\Pool} enforce it **atomically**: a
+     * position is a Redis stream id, so it is stored as the id of a one-entry
+     * stream and the server itself refuses an `XADD` that is not an advance.
+     * There is no window between deciding and writing for a second process to
+     * slip into.
      *
-     * **The consequence is a replay, which is the delivery guarantee rather
-     * than a departure from it.** A regressed position re-delivers events that
-     * were already handled; it never skips one, never loses one, and never
-     * advances past work that did not happen. Handlers are required to tolerate
-     * a repeat for three other reasons already — see {@see Consumer} — so this
-     * adds a fourth cause of something they must survive regardless, not a new
-     * kind of failure.
+     * Every other store falls back to this base implementation, which reads,
+     * compares, then writes. Two processes can interleave inside that window,
+     * both decide they are ahead, and leave the older position stored. There is
+     * no portable way to close it: {@see Cursor\Cache} would need a
+     * compare-and-set the cache does not have — leases exist, but
+     * `getGeneration()` returns `'0'` on adapters that do not implement them, so
+     * a fix would hold on some cache backends and silently not on others, which
+     * is worse than one clearly stated guarantee.
      *
-     * Closing the window needs a compare-and-set the store performs in one
-     * operation, and it is not reachable across this abstraction:
-     *
-     * - `ZADD ... GT` is the native primitive, but scores are doubles and
-     *   cannot hold `<ms>-<seq>` exactly once the sequence is packed in.
-     * - `WATCH`/`MULTI` needs no scripting, but leaves watch state on a
-     *   connection that is about to go back into a pool.
-     * - A one-entry stream via `XADD` would be exact, since these ids *are*
-     *   Redis stream ids and Redis refuses to move one backwards natively — but
-     *   it changes the stored type, so cursors written by an earlier version
-     *   stop being readable.
-     * - {@see Cursor\Cache} has no portable compare-and-set at all: a Utopia
-     *   cache exposes leases, but `getGeneration()` returns `'0'` on adapters
-     *   that do not implement them. Any fix here would hold on some cache
-     *   backends and silently not on others, which is worse than one uniform,
-     *   stated guarantee.
-     *
-     * So the guarantee is deliberately the weaker, uniform one: a position
-     * never moves backwards **except** under a sub-millisecond interleave
-     * between two processes sharing a consumer name, whose cost is bounded
-     * replay. Run one process per name ({@see Consumer::__construct()}) and it
-     * cannot arise at all.
+     * **Where the window remains, losing the race costs a replay, which is the
+     * delivery guarantee rather than a departure from it.** A regressed position
+     * re-delivers events that were already handled; it never skips one, never
+     * loses one, and never advances past work that did not happen. Handlers must
+     * tolerate a repeat for three other reasons anyway — see {@see Consumer} —
+     * so this is a fourth cause of something they already survive, not a new
+     * kind of failure. Running one process per consumer name avoids it
+     * entirely.
      *
      * @throws Exception When the store cannot be written.
      */

@@ -28,9 +28,11 @@ use Utopia\CloudEvents\CloudEvent;
  * 1. A handler can succeed and the position then fail to save.
  * 2. A batch interrupted partway replays from the last event that succeeded.
  * 3. A consumer whose position is lost restarts from the oldest retained event.
- * 4. Two processes sharing a consumer name can interleave inside the
- *    read-compare-write in {@see Cursor::save()} and leave the older position
- *    stored, re-delivering what the newer one had already handled.
+ * 4. Two processes sharing a consumer name can interleave inside
+ *    {@see Cursor::save()} and leave the older position stored, re-delivering
+ *    what the newer one had already handled. Not possible on
+ *    {@see Cursor\Redis} or {@see Cursor\Pool}, where the store refuses a
+ *    stale position atomically.
  *
  * Every one of them re-delivers; none of them skips. That asymmetry is the
  * whole design — an event handled twice is absorbed by an idempotent handler,

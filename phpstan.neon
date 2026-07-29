@@ -4,16 +4,3 @@ parameters:
         - src
         - tests
     treatPhpDocTypesAsCertain: false
-
-    # Stream commands landed in ext-redis 5. Analysis run without the
-    # extension loaded falls back to bundled stubs that predate them, so these
-    # only resolve where ext-redis is actually installed — which is the case in
-    # CI, and not the case on a machine that only runs the unit suite.
-    reportUnmatchedIgnoredErrors: false
-    ignoreErrors:
-        -
-            message: '#Call to an undefined method Redis\|RedisCluster::(xAdd|xRange)\(\)#'
-            path: src/Feed/Journal/Redis.php
-        -
-            message: '#Call to an undefined method Redis::(xAdd|xRange|xLen)\(\)#'
-            path: tests/Feed/E2E/RedisTest.php

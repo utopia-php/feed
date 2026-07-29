@@ -173,8 +173,9 @@ These were load-bearing in the original implementations and are preserved:
   failed event is retried on the next run, and everything behind it waits.
 - **A cursor store that is down is a warning, not a failure.** The position is
   mirrored in memory, so the consumer keeps working and only a restart replays.
-- **The `feed:<name>:cursor:<consumer>` key format**, so consumers keep their
-  positions across the migration instead of replaying the retained feed.
+- **The `feed:<name>:cursor:<consumer>` key**, so consumers keep their positions
+  across the migration instead of replaying the retained feed. Its *type*
+  changes — see the note below.
 - **`<ms>-<seq>` event ids**, so positions already handed out stay valid.
 - **The margin a consumer allows its HTTP client over the long-poll timeout**,
   without which every quiet tick surfaces as a transport failure.
@@ -195,3 +196,41 @@ These were load-bearing in the original implementations and are preserved:
   is nullable, so an event without one reads back as `null` rather than `''`;
   `data` is unrestricted, so a list or scalar payload round-trips as itself; and
   `dataschema` and extension attributes now survive an append and a read.
+
+## ⚠️ Redis cursors change type — read this before deploying
+
+`Cursor\Redis` and `Cursor\Pool` now store a consumer's position as **the id of
+a one-entry Redis stream**, where cloud's implementation stored it as a plain
+string under the same key.
+
+The reason is atomicity. A feed position *is* a Redis stream id — `<ms>-<seq>`
+is the format `XADD` allocates — and Redis refuses to append an id equal to or
+smaller than the one at the top of a stream. Storing the position that way makes
+"a position never moves backwards" the server's rule, enforced in the same
+operation that writes it. A rolling restart briefly runs two processes under one
+consumer name, and without this the departing one finishing a shorter batch
+could land its older position last and undo the arriving one's progress.
+
+**The upgrade is transparent and needs no manual step.** `load()` reads a
+string-valued key where it finds one, and the next `save()` replaces the key in
+place with the stream form. The position is carried across, because the consumer
+is advancing past exactly the value the string held — so no events are replayed.
+
+What this does mean:
+
+- **Do not roll back** to a build that predates this change while a cursor key
+  holds a stream. The old code issues `GET` against it and gets `WRONGTYPE`, and
+  the consumer will fail to load its position on every poll. Recovering means
+  deleting the affected `feed:*:cursor:*` keys, after which consumers restart
+  from the oldest retained event — safe, but a burst of redundant work.
+- **Anything reading these keys directly** — a dashboard, a runbook, an ops
+  script doing `GET feed:edge:cursor:fra` — needs updating to
+  `XREVRANGE feed:edge:cursor:fra + - COUNT 1` and to take the entry's *id*, not
+  its payload. The payload is a placeholder; a stream entry has to carry one
+  field, and the id is the whole value.
+- **`Cursor\Cache` is unaffected.** It still stores a string, and it keeps the
+  non-atomic read-compare-write, because a Utopia cache has no portable
+  compare-and-set — `getGeneration()` returns `'0'` on adapters without lease
+  support, so a fix there would hold on some backends and silently not on
+  others. The edge poller uses this store; its residual race costs a replay,
+  which its invalidation handler already tolerates.
