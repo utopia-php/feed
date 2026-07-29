@@ -116,7 +116,7 @@ $domain = \is_array($tags) ? ($tags['domain'] ?? '') : '';
 | `Feed\Cursor` | `Cursor\Cache` |
 | `Feed\Event` | `Event` |
 | `Feed\Event::FEED` and the type constants | Stay — they name cloud's feed and its events |
-| `Manager::fetchFeed()` | `Adapter\Http` |
+| `Manager::fetchFeed()` | `Adapter\Http`, over `utopia-php/client` |
 | `Consumer::TIMEOUT_MARGIN` | `Protocol::TIMEOUT_MARGIN` |
 | `Feed\Poller` | Stays — Swoole interval scheduling |
 | `Router\Invalidator` | Stays — it purges edge caches |
@@ -125,7 +125,7 @@ The whole of `Feed\Consumer`, `Feed\Cursor` and `Feed\Event` is replaced by
 construction:
 
 ```php
-$client = (new Client())->addHeader('x-appwrite-jwt', $token);
+$client = (new Client(new Curl()))->withHeaders(['x-appwrite-jwt' => $token]);
 
 $consumer = new Consumer(
     feed: new Feed(new Http($client, $endpoint . '/manager/feeds', 'edge')),

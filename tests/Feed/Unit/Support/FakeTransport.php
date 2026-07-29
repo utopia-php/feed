@@ -4,84 +4,69 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Unit\Support;
 
-use Utopia\Fetch\Adapter;
-use Utopia\Fetch\Options\Request as RequestOptions;
-use Utopia\Fetch\Response;
+use Psr\Http\Client\NetworkExceptionInterface;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
+use Utopia\Psr7\ContentType;
+use Utopia\Psr7\Header;
+use Utopia\Psr7\Response;
+use Utopia\Psr7\Stream;
 
 /**
- * A fetch adapter that answers from a script instead of a network, and records
- * what it was asked, so the HTTP feed adapter can be tested without a server.
+ * A client that answers from a script, for driving the HTTP feed adapter
+ * through responses a real producer would be awkward to provoke.
  */
-class FakeTransport implements Adapter
+class FakeTransport extends FakeClient
 {
-    /** @var list<array{url: string, method: string, headers: array<string, string>, timeout: int}> */
-    public array $requests = [];
-
-    /** @var list<Response|\Throwable> */
-    private array $responses;
-
     /**
-     * @param list<Response|\Throwable> $responses Answered in order; the last
-     *        one repeats once the script runs out.
+     * @param list<ResponseInterface|\Throwable> $responses Answered in order;
+     *        the last one repeats once the script runs out.
      */
-    public function __construct(array $responses)
+    public static function of(array $responses): self
     {
-        $this->responses = $responses;
+        $transport = new self();
+        $transport->recorder->responses = $responses;
+
+        return $transport;
     }
 
     /**
      * @param array<string, mixed> $body
      */
-    public static function ok(array $body, int $statusCode = 200): Response
+    public static function json(array $body, int $statusCode = 200): ResponseInterface
     {
-        return new Response($statusCode, (string) \json_encode($body), []);
+        return self::raw((string) \json_encode($body), $statusCode);
     }
 
-    public static function status(int $statusCode, string $body = '{}'): Response
+    public static function raw(string $body, int $statusCode = 200): ResponseInterface
     {
-        return new Response($statusCode, $body, []);
+        return (new Response($statusCode, body: new Stream\Factory()->createStream($body)))
+            ->withHeader(Header::CONTENT_TYPE, ContentType::JSON);
     }
 
-    public static function raw(string $body): Response
+    /**
+     * A transport failure, which PSR-18 requires be thrown rather than returned.
+     */
+    public static function offline(string $message = 'Connection refused'): \Throwable
     {
-        return new Response(200, $body, []);
+        return new class ($message) extends \RuntimeException implements NetworkExceptionInterface {
+            public function getRequest(): RequestInterface
+            {
+                throw new \LogicException('Not needed for this test');
+            }
+        };
     }
 
-    public function send(
-        string $url,
-        string $method,
-        mixed $body,
-        array $headers,
-        RequestOptions $options,
-        ?callable $chunkCallback = null
-    ): Response {
-        $this->requests[] = [
-            'url' => $url,
-            'method' => $method,
-            'headers' => $headers,
-            'timeout' => $options->getTimeout(),
-        ];
+    protected function respond(RequestInterface $request): ResponseInterface
+    {
+        $responses = &$this->recorder->responses;
 
-        $response = \count($this->responses) > 1 ? \array_shift($this->responses) : ($this->responses[0] ?? null);
+        $response = \count($responses) > 1 ? \array_shift($responses) : ($responses[0] ?? null);
 
         if ($response instanceof \Throwable) {
             throw $response;
         }
 
-        return $response ?? self::ok(['total' => 0, 'events' => []]);
-    }
-
-    /**
-     * @return array{url: string, method: string, headers: array<string, string>, timeout: int}
-     */
-    public function lastRequest(): array
-    {
-        $request = \end($this->requests);
-
-        if ($request === false) {
-            throw new \RuntimeException('No request was made');
-        }
-
-        return $request;
+        return $response ?? self::json(['total' => 0, 'events' => []]);
     }
 }

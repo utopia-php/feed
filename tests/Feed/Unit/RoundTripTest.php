@@ -14,7 +14,6 @@ use Utopia\Feed\Cursor\Cache as CacheCursor;
 use Utopia\Feed\Event;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
-use Utopia\Fetch\Client;
 use Utopia\Tests\Unit\Support\FeedServer;
 
 /**
@@ -39,7 +38,7 @@ class RoundTripTest extends TestCase
         $this->server = new FeedServer($this->producer);
 
         $this->consumerFeed = new Feed(
-            new Http(new Client($this->server), 'https://cloud.example.com/v1/feeds', 'edge')
+            new Http($this->server, 'https://cloud.example.com/v1/feeds', 'edge')
         );
 
         $this->cursor = new CacheCursor(new UtopiaCache(new CacheMemory()), 'edge');
@@ -192,7 +191,7 @@ class RoundTripTest extends TestCase
             'private, max-age=31536000', // 2 of 2 — settled history
             'no-store',                  // 1 of 2 — the live end, will grow
             'no-store',                  // 0 of 2 — caught up
-        ], $this->server->cacheControl);
+        ], $this->server->recorder->cacheControl());
     }
 
     public function testTwoConsumersOfOneProducerAreIndependent(): void

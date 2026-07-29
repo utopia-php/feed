@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseInterface;
+use Utopia\Client;
 use Utopia\Feed\Adapter\Http;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
@@ -14,26 +16,25 @@ use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
-use Utopia\Fetch\Client;
 use Utopia\Tests\Unit\Support\FakeTransport;
 
 class HttpAdapterTest extends TestCase
 {
     /**
-     * @param list<\Utopia\Fetch\Response|\Throwable> $responses
+     * @param list<ResponseInterface|\Throwable> $responses
      * @return array{Feed, FakeTransport}
      */
-    private function feed(array $responses): array
+    private function feed(array $responses = []): array
     {
-        $transport = new FakeTransport($responses);
-        $adapter = new Http(new Client($transport), 'https://cloud.example.com/v1/feeds', 'edge');
+        $transport = FakeTransport::of($responses);
+        $adapter = new Http($transport, 'https://cloud.example.com/v1/feeds', 'edge');
 
         return [new Feed($adapter), $transport];
     }
 
     public function testReadsAFeedOverHttp(): void
     {
-        [$feed] = $this->feed([FakeTransport::ok(Protocol::encode([
+        [$feed] = $this->feed([FakeTransport::json(Protocol::encode([
             new Event(id: '1-0', type: 'io.appwrite.edge.invalidate-rule', data: ['tags' => ['domain' => 'example.com']]),
             new Event(id: '1-1', type: 'io.appwrite.edge.invalidate'),
         ]))]);
@@ -47,39 +48,57 @@ class HttpAdapterTest extends TestCase
 
     public function testAppendsTheFeedNameToTheEndpoint(): void
     {
-        [$feed, $transport] = $this->feed([FakeTransport::ok([])]);
+        [$feed, $transport] = $this->feed();
 
         $feed->read();
 
-        $this->assertStringStartsWith('https://cloud.example.com/v1/feeds/edge', $transport->lastRequest()['url']);
+        $this->assertStringStartsWith('https://cloud.example.com/v1/feeds/edge', $transport->recorder->last()['uri']);
     }
 
     public function testEncodesAFeedNameThatNeedsIt(): void
     {
-        $adapter = new Http(new Client(new FakeTransport([])), 'https://cloud.example.com/v1/feeds/', 'a b/c');
+        $adapter = new Http(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds/', 'a b/c');
 
         $this->assertSame('https://cloud.example.com/v1/feeds/a%20b%2Fc', $adapter->getUrl());
     }
 
+    public function testReadsWithGet(): void
+    {
+        [$feed, $transport] = $this->feed();
+
+        $feed->read();
+
+        $this->assertSame('GET', $transport->recorder->last()['method']);
+    }
+
+    public function testAsksForJson(): void
+    {
+        [$feed, $transport] = $this->feed();
+
+        $feed->read();
+
+        $this->assertSame('application/json', $transport->recorder->last()['headers']['Accept'] ?? null);
+    }
+
     public function testSendsThePositionAndLimit(): void
     {
-        [$feed, $transport] = $this->feed([FakeTransport::ok([])]);
+        [$feed, $transport] = $this->feed();
 
         $feed->read('1-0', 250);
 
-        $url = $transport->lastRequest()['url'];
+        $uri = $transport->recorder->last()['uri'];
 
-        $this->assertStringContainsString('lastEventId=1-0', $url);
-        $this->assertStringContainsString('limit=250', $url);
+        $this->assertStringContainsString('lastEventId=1-0', $uri);
+        $this->assertStringContainsString('limit=250', $uri);
     }
 
     public function testSendsNoParametersOnAFirstFullRead(): void
     {
-        [$feed, $transport] = $this->feed([FakeTransport::ok([])]);
+        [$feed, $transport] = $this->feed();
 
         $feed->read(null, Feed::MAX_BATCH);
 
-        $this->assertStringNotContainsString('lastEventId', $transport->lastRequest()['url']);
+        $this->assertStringNotContainsString('lastEventId', $transport->recorder->last()['uri']);
     }
 
     /**
@@ -88,14 +107,14 @@ class HttpAdapterTest extends TestCase
      */
     public function testDelegatesLongPollingToTheProducer(): void
     {
-        [$feed, $transport] = $this->feed([FakeTransport::ok([])]);
+        [$feed, $transport] = $this->feed();
 
         $started = \microtime(true);
         $feed->poll(null, 100, 5000);
 
         $this->assertLessThan(1, \microtime(true) - $started, 'Must not wait client-side');
-        $this->assertCount(1, $transport->requests, 'Must not poll in a loop');
-        $this->assertStringContainsString('timeout=5000', $transport->lastRequest()['url']);
+        $this->assertCount(1, $transport->recorder->requests, 'Must not poll in a loop');
+        $this->assertStringContainsString('timeout=5000', $transport->recorder->last()['uri']);
     }
 
     /**
@@ -105,21 +124,23 @@ class HttpAdapterTest extends TestCase
      */
     public function testAllowsTheClientLongerThanTheLongPollTimeout(): void
     {
-        [$feed, $transport] = $this->feed([FakeTransport::ok([])]);
+        [$feed, $transport] = $this->feed();
 
         $feed->poll(null, 100, 5000);
 
-        $this->assertSame(5000 + Protocol::TIMEOUT_MARGIN, $transport->lastRequest()['timeout']);
+        // Seconds, which is what the client takes; the protocol margin is in
+        // milliseconds, like the timeout the producer is given.
+        $this->assertSame(15.0, $transport->recorder->last()['timeout']);
+        $this->assertSame((float) ((5000 + Protocol::TIMEOUT_MARGIN) / 1000), $transport->recorder->last()['timeout']);
     }
 
-    public function testUsesTheClientDefaultTimeoutWhenNotLongPolling(): void
+    public function testLeavesTheConfiguredTimeoutAloneWhenNotLongPolling(): void
     {
-        $transport = new FakeTransport([FakeTransport::ok([])]);
-        $client = (new Client($transport))->setTimeout(1234);
+        [$feed, $transport] = $this->feed();
 
-        (new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge')))->read();
+        $feed->read();
 
-        $this->assertSame(1234, $transport->lastRequest()['timeout']);
+        $this->assertNull($transport->recorder->last()['timeout'], 'A plain read must not override the client');
     }
 
     /**
@@ -129,7 +150,7 @@ class HttpAdapterTest extends TestCase
      */
     public function testCarriesTheStatusOfARejectedRead(): void
     {
-        [$feed] = $this->feed([FakeTransport::status(404)]);
+        [$feed] = $this->feed([FakeTransport::json([], 404)]);
 
         try {
             $feed->read();
@@ -141,7 +162,7 @@ class HttpAdapterTest extends TestCase
 
     public function testRaisesServerErrors(): void
     {
-        [$feed] = $this->feed([FakeTransport::status(503)]);
+        [$feed] = $this->feed([FakeTransport::json([], 503)]);
 
         try {
             $feed->read();
@@ -151,9 +172,23 @@ class HttpAdapterTest extends TestCase
         }
     }
 
+    /**
+     * PSR-18 returns 4xx and 5xx rather than throwing, so the adapter has to
+     * check the status itself — a producer error must not read as an empty
+     * batch, which the consumer would take for "caught up".
+     */
+    public function testAnErrorStatusIsNotMistakenForAnEmptyBatch(): void
+    {
+        [$feed] = $this->feed([FakeTransport::json(['total' => 0, 'events' => []], 500)]);
+
+        $this->expectException(Transport::class);
+
+        $feed->read();
+    }
+
     public function testWrapsATransportFailure(): void
     {
-        [$feed] = $this->feed([new \RuntimeException('Connection refused')]);
+        [$feed] = $this->feed([FakeTransport::offline()]);
 
         $this->expectException(Transport::class);
         $this->expectExceptionMessageMatches('/Connection refused/');
@@ -181,11 +216,29 @@ class HttpAdapterTest extends TestCase
 
     public function testCannotAppendToAFeedItDoesNotOwn(): void
     {
-        [$feed] = $this->feed([FakeTransport::ok([])]);
+        [$feed] = $this->feed();
 
         $this->expectException(Unsupported::class);
 
         $feed->append('io.appwrite.edge.invalidate');
+    }
+
+    /**
+     * Anything implementing the client's adapter interface works, including
+     * the client itself wrapping a transport — which is how this is actually
+     * built in a service.
+     */
+    public function testWorksThroughTheClientItself(): void
+    {
+        $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new Event(id: '1-0', type: 'a')]))]);
+
+        $client = (new Client($transport))->withHeaders(['x-appwrite-jwt' => 'token']);
+        $feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
+
+        $events = $feed->read();
+
+        $this->assertCount(1, $events);
+        $this->assertSame('token', $transport->recorder->last()['headers']['x-appwrite-jwt'] ?? null);
     }
 
     /**
@@ -195,12 +248,12 @@ class HttpAdapterTest extends TestCase
     public function testConsumesARemoteFeedThroughTheSameConsumer(): void
     {
         [$feed, $transport] = $this->feed([
-            FakeTransport::ok(Protocol::encode([
+            FakeTransport::json(Protocol::encode([
                 new Event(id: '1-0', type: 'a'),
                 new Event(id: '1-1', type: 'b'),
             ])),
-            FakeTransport::ok(Protocol::encode([new Event(id: '1-2', type: 'c')])),
-            FakeTransport::ok(Protocol::encode([])),
+            FakeTransport::json(Protocol::encode([new Event(id: '1-2', type: 'c')])),
+            FakeTransport::json(Protocol::encode([])),
         ]);
 
         $cursor = new MemoryCursor('edge');
@@ -218,6 +271,6 @@ class HttpAdapterTest extends TestCase
         $this->assertSame(0, $consumer->consume($handler));
 
         $this->assertSame(['a', 'b', 'c'], $seen);
-        $this->assertStringContainsString('lastEventId=1-1', $transport->requests[1]['url']);
+        $this->assertStringContainsString('lastEventId=1-1', $transport->recorder->uris()[1]);
     }
 }

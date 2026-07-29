@@ -1,12 +1,17 @@
 name: feed
 
+# Pick the PHP version with an environment variable rather than a per-version
+# file, so testing against a new release is `PHP_VERSION=8.6 docker compose up`
+# and adding it to CI is one line in .github/workflows/tests.yml.
 services:
   tests:
     container_name: feed-tests
-    image: feed-tests:${PHP_VERSION:-8.4}
+    image: feed-tests:${PHP_VERSION:-8.5}
     build:
       context: .
-      dockerfile: Dockerfile.php-${PHP_VERSION:-8.4}
+      dockerfile: Dockerfile
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.5}
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -15,6 +20,7 @@ services:
     volumes:
       - ./phpunit.xml:/code/phpunit.xml
       - ./phpstan.neon:/code/phpstan.neon
+      - ./pint.json:/code/pint.json
       - ./src:/code/src
       - ./tests:/code/tests
     depends_on:

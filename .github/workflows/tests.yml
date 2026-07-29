@@ -4,12 +4,17 @@ on: [pull_request]
 
 jobs:
   tests:
-    name: Tests
+    name: "PHP ${{ matrix.php-versions }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        php-versions: ['8.3', '8.4', '8.5']
+        # Add a PHP version here and nowhere else — the image is built from one
+        # parameterized Dockerfile.
+        php-versions: ['8.5']
+
+    env:
+      PHP_VERSION: ${{ matrix.php-versions }}
 
     steps:
       - name: Checkout repository
@@ -17,7 +22,6 @@ jobs:
 
       - name: Build
         run: |
-          export PHP_VERSION=${{ matrix.php-versions }}
           docker compose build
           docker compose up -d
 

@@ -15,7 +15,6 @@ jobs:
       # Redis stream calls only resolve where ext-redis is actually installed.
       - name: Build
         run: |
-          export PHP_VERSION=8.4
           docker compose build tests
           docker compose up -d tests
 

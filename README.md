@@ -163,10 +163,13 @@ $handled = $consumer->consume(function (Event $event) use ($router) {
 Consuming **another service's** feed is the same code with a different adapter:
 
 ```php
+use Utopia\Client;
+use Utopia\Client\Adapter\Curl\Client as Curl;
 use Utopia\Feed\Adapter\Http;
-use Utopia\Fetch\Client;
 
-$client = (new Client())->addHeader('x-appwrite-jwt', $token);
+$client = (new Client(new Curl()))
+    ->withHeaders(['x-appwrite-jwt' => $token])
+    ->withConnectionReuse();
 
 $feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
 ```
@@ -174,6 +177,12 @@ $feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge')
 Nothing above the adapter knows the events are arriving over the network,
 including the long polling — `Http` hands the wait to the producer, so a poll is
 one held request rather than a client-side loop.
+
+`Http` takes any [`utopia-php/client`](https://github.com/utopia-php/client)
+adapter, so a `Pool` or a Swoole coroutine transport drops straight in. Leave the
+`Retry` decorator off, though: a failed read leaves the cursor where it was, so
+the next poll is already the retry, and retrying inside a long poll only
+multiplies how long a single tick can take.
 
 Call `consume()` on a timer, or give the consumer a `timeout` and loop:
 
@@ -192,7 +201,7 @@ while (true) {
 | --- | --- | --- | --- |
 | `Adapter\Redis` | Producing a feed on a Redis stream | ✅ | ✅ |
 | `Adapter\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ | ✅ |
-| `Adapter\Http` | Consuming another service's feed | ❌ | ✅ |
+| `Adapter\Http` | Consuming another service's feed, over [utopia-php/client](https://github.com/utopia-php/client) | ❌ | ✅ |
 | `Adapter\Memory` | Tests, and single-process development | ✅ | ✅ |
 | `Adapter\None` | No backend configured | ❌ | ❌ |
 
@@ -304,10 +313,21 @@ Static analysis runs at PHPStan level max. Run it inside the container, where
 docker compose exec tests composer check
 ```
 
+The image is built from one parameterized `Dockerfile`, so testing against
+another PHP version needs no new file:
+
+```bash
+PHP_VERSION=8.6 docker compose build
+PHP_VERSION=8.6 docker compose up -d
+```
+
+To add that version to CI, add it to the `php-versions` matrix in
+`.github/workflows/tests.yml` — that is the only place versions are listed.
+
 ## System requirements
 
-Utopia Framework requires PHP 8.3 or later. We recommend using the latest PHP
-version whenever possible.
+Utopia Feed requires PHP 8.5 or later. We recommend using the latest PHP version
+whenever possible.
 
 ## Copyright and license
 
