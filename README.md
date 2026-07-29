@@ -54,6 +54,53 @@ on — a cache tag to drop, a record to refresh, a config to reload.
 - **Cursors** — positions in a Utopia cache, in Redis, or in memory
 - **Consumer** — the pull loop, the position bookkeeping and the at-least-once semantics, written once
 
+## How the pieces fit
+
+The library splits along the same line the design does: the **producer owns the
+events**, each **consumer owns its position**, and `Protocol` is the seam between
+them when they live in different services.
+
+```
+        PRODUCER                        │              CONSUMER
+                                        │
+  append()                              │        consume(handler)
+     ↓                                  │              ↓
+  ┌────────┐        ┌──────────┐        │        ┌──────────┐      ┌────────┐
+  │  Feed  │───────▶│ Journal  │        │        │ Consumer │─────▶│ Cursor │
+  └────────┘        │  \Redis  │        │        └──────────┘      │ \Cache │
+   policy           │  \Pool   │        │         the pull loop    └────────┘
+                    │  \Memory │        │              │          "where I got to"
+                    └──────────┘        │              ↓
+                     the events         │        ┌────────┐     ┌──────────┐
+                          │             │        │  Feed  │────▶│ Journal  │
+                          │             │        └────────┘     │  \Http   │
+                    ┌───────────┐       │                       └──────────┘
+                    │ Protocol  │◀──────┼──── HTTP GET ──────────────┘
+                    └───────────┘       │
+                  the wire contract     │
+```
+
+| | |
+| --- | --- |
+| **`Journal`** | Where the events live. Assigns an ordered id on append, returns the events after a given id — and nothing else. `Journal\Http` reads *another service's* journal, so to everything above it a remote feed and a local one are the same object. |
+| **`Feed`** | The policy on one journal: stamps `source` and `time` on append, clamps a consumer-supplied `limit`, and long-polls. Subclass it to give a feed a typed vocabulary. |
+| **`Cursor`** | Where one consumer's position is kept. Deliberately independent of `Journal` — a consumer keeps its position in *its own* storage, never the producer's. |
+| **`Consumer`** | The pull loop. Reads from the stored position, hands each event to a handler oldest-first, and advances only past events the handler accepted. |
+| **`Protocol`** | The HTTP contract — query parameters, response envelope, caching rules — held in one place so the two halves cannot drift apart. |
+
+The structural consequence worth knowing up front: **the producer stores no
+per-consumer state at all.** That is what makes adding a consumer free, and it is
+why `Cursor` is its own thing rather than a method on `Journal`.
+
+Dependencies only ever point one way, so each piece is testable alone — a
+`Journal\Memory` and a `Cursor\Memory` exercise the whole pull loop with no Redis
+and no network:
+
+```
+Consumer ──▶ Feed ──▶ Journal ──▶ Protocol   (only Journal\Http)
+    └──────▶ Cursor
+```
+
 ## Getting started
 
 Install using composer:
