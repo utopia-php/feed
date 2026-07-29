@@ -136,6 +136,37 @@ class EventTest extends TestCase
         $this->assertSame('application/json', $encoded['datacontenttype']);
     }
 
+    /**
+     * Every CloudEvents attribute is emitted, and none of them are null, even
+     * on an event that set almost nothing.
+     *
+     * This is what makes the wire form portable: a stricter CloudEvents reader
+     * — including `utopia-php/cloudevents`, whose `fromArray()` reads
+     * `specversion`, `source`, `id` and `time` without defaulting them — can
+     * consume it directly. Dropping an empty field here, or letting one be
+     * null, would break those readers without breaking any test that only
+     * round-trips through this class.
+     */
+    public function testTheWireFormIsPortableToStricterCloudEventsReaders(): void
+    {
+        $encoded = (new Event(id: '1-0', type: 'test'))->toArray();
+
+        $this->assertSame([
+            'specversion',
+            'id',
+            'type',
+            'source',
+            'time',
+            'subject',
+            'datacontenttype',
+            'data',
+        ], \array_keys($encoded));
+
+        foreach ($encoded as $field => $value) {
+            $this->assertNotNull($value, "The {$field} attribute must never be null on the wire");
+        }
+    }
+
     public function testReadsPayloadKeysWithADefault(): void
     {
         $event = new Event(id: '1-0', type: 'test', data: ['tags' => ['a' => 'b']]);

@@ -236,6 +236,26 @@ a warning rather than a failure: it keeps its position in memory and carries on,
 and only a restart before the store recovers replays anything. Pass
 `onWarning()` to hear about it.
 
+## Interoperability
+
+`Event::toArray()` emits every CloudEvents v1.0 attribute, always populated and
+never null, so the wire form is portable to stricter CloudEvents readers without
+a conversion step. [`utopia-php/cloudevents`](https://github.com/utopia-php/cloudevents)
+consumes it directly, and round-trips back:
+
+```php
+$cloudEvent = CloudEvent::fromArray($event->toArray());   // works, and validate()s
+$event = Event::fromArray($cloudEvent->toArray());        // identical event back
+```
+
+That is why this library models its own event rather than depending on one. A
+feed consumer reads events from a producer it does not control, so it has to be
+strict about the single field it cannot proceed without — `id`, which is its
+position in the feed — and tolerant about everything else, including attributes
+a future producer adds or a `specversion` it has never heard of. A general
+CloudEvents type has no reason to make that trade, and the two rules point in
+opposite directions.
+
 ## Delivery semantics
 
 **A handler must be safe to run twice on the same event.** There are three
