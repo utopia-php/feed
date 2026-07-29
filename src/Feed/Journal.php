@@ -9,8 +9,8 @@ use Utopia\CloudEvents\Exception as CloudEventsException;
 use Utopia\Feed\Exception\Invalid;
 
 // Server class: durable storage for the events — Journal\Redis, Pool, Memory.
-// Client exception: Journal\Http, which reads another service's feed over the wire.
-// Journals that own their events also implement Appendable.
+// The one client-side journal is Journal\Http, which reads another service's
+// feed over the wire. Journals that own their events also implement Appendable.
 abstract class Journal
 {
     protected const int POLL_INTERVAL = 500_000; // 0.5s
@@ -30,7 +30,13 @@ abstract class Journal
     /** @return list<CloudEvent> */
     abstract public function read(?string $lastEventId, int $limit): array;
 
-    /** @return list<CloudEvent> */
+    /**
+     * Wait for events, re-reading on an interval until some land or the
+     * deadline passes. Journal\Http overrides this: there the producer does the
+     * waiting, so a poll is one held request.
+     *
+     * @return list<CloudEvent>
+     */
     public function poll(?string $lastEventId, int $limit, int $timeout): array
     {
         $deadline = \microtime(true) + $timeout / 1000;

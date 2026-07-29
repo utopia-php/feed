@@ -58,7 +58,17 @@ final class Protocol
     }
 
     /**
+     * Read a batch off the wire.
+     *
+     * An entry that cannot be read ends the batch there rather than failing the
+     * whole response: the events before it are handled and the position
+     * advances past them, leaving the broken entry at the head of the next
+     * batch, where it stops the feed loudly. With no usable prefix there is
+     * nothing to advance to, so that case throws.
+     *
      * @return list<CloudEvent>
+     *
+     * @throws Invalid When the payload is not a batch, or its first entry cannot be read.
      */
     public static function decode(mixed $payload): array
     {

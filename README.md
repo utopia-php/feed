@@ -151,9 +151,11 @@ $response
 
 Cap the limit yourself with `Feed::MAX_BATCH` before the call, so the number
 that reaches `cacheControl()` is the one the batch was actually built with — a
-read never returns more than that cap anyway. A full batch is settled
-history and is marked cacheable; a short one is the live end of the feed and is
-marked `no-store`. Caching is `private` unless you pass `public: true`.
+read never returns more than that cap anyway. `Feed` clamps the wait too, to
+`Feed::MAX_TIMEOUT` (30s), so a client cannot ask a producer to hold a
+connection open for as long as it likes. A full batch is settled history and is
+marked cacheable; a short one is the live end of the feed and is marked
+`no-store`. Caching is `private` unless you pass `public: true`.
 
 ## Events
 
@@ -176,6 +178,11 @@ A batch is decoded strictly about `id`, because for a feed the id *is* the
 consumer's position, and leniently about everything else — a producer that adds
 an attribute or moves the spec forward must not stop a consumer that predates it.
 
+An entry that cannot be read at all ends the batch where it sits: the events
+before it are returned and handled, and the broken one heads the next batch,
+where it stops the feed loudly. Only when it is the first entry — leaving no
+usable prefix — does the read throw `Exception\Invalid`.
+
 ## Journals
 
 A journal is where a feed's events live. It returns the events after a given id;
@@ -189,9 +196,15 @@ the ones that own their events also implement `Appendable` and assign the ids.
 | `Journal\Memory` | Tests and single-process development | ✅ |
 | `Journal\None` | No backend configured — throws on use | ✅, and throws |
 
-`Journal\Pool` is what most services producing a feed want: a long poll holds its
-connection for the whole timeout, so reading through a shared client would block
-every other user of it.
+`Journal\Pool` is what most services producing a feed want: a long poll spans its
+whole timeout, and this one borrows a connection per read and gives it back while
+it waits, so polling never ties up the client the rest of the service is using.
+
+`Journal\Redis` and `Journal\Pool` trim the stream to about `maxSize` entries
+(100,000 by default, and the same for `Journal\Memory`; Redis trims
+approximately, so the stream may run a little longer). That cap is the feed's
+retention: the oldest entry still in it is where a consumer with no position
+starts.
 
 `Journal\None` throws on every operation rather than doing nothing, so a
 misconfigured service fails at the point of use instead of silently dropping
@@ -211,6 +224,10 @@ consumer name, so a single store serves every feed a service consumes:
 | `Cursor\Pool` | The same, over a pooled connection |
 | `Cursor\Memory` | Tests, or a consumer that should replay from the beginning on every restart |
 | `Cursor\None` | No store configured — remembers nothing, so a restart replays |
+
+`Cursor\Cache` holds a position for `Cursor\Cache::TTL` (30 days) unless it is
+saved again, so a consumer idle for longer than that reads back as one that has
+never run.
 
 The store is allowed to be lossy: a lost position costs a replay, not a gap. A
 store that is *down* is a different matter — the failure surfaces from
@@ -252,7 +269,7 @@ the backlog.
 
 ## Rolling out a feed
 
-Replacing push delivery with a feed is a two-release change:
+Replacing push delivery with a feed is a staged change, one release per step:
 
 1. **Release the producer.** It appends events; nothing reads them yet.
 2. **Release the consumers.** Each drains the backlog from its first poll.
@@ -277,10 +294,11 @@ try {
 
 ## Tests
 
-Unit tests need nothing but composer:
+Unit tests need no services, but dependencies declare extensions the suite never
+touches (`ext-redis`, `ext-memcached`, `ext-protobuf`), so install past them:
 
 ```bash
-composer install
+composer install --ignore-platform-reqs
 composer test
 ```
 

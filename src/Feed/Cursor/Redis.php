@@ -9,9 +9,6 @@ use Utopia\Feed\Exception\Transport;
 
 class Redis extends Cursor
 {
-    /**
-     * @param \Redis|\RedisCluster $redis
-     */
     public function __construct(protected readonly \Redis|\RedisCluster $redis)
     {
     }

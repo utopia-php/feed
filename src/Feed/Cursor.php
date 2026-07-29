@@ -26,7 +26,8 @@ abstract class Cursor
     abstract public function reset(string $feed, string $consumer): void;
 
     /**
-     * Helper tool for consistency
+     * The one place a cursor key is shaped, so every store agrees on it.
+     *
      * @throws Invalid When either name is empty.
      */
     protected function key(string $feed, string $consumer): string
