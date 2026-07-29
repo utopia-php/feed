@@ -9,7 +9,7 @@ use Utopia\Feed\Adapter\Memory as MemoryAdapter;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Feed;
 use Utopia\Tests\Unit\Support\FailingCursor;
@@ -41,7 +41,7 @@ class ConsumerTest extends TestCase
     private function drain(Consumer $consumer, ?int &$count = null): array
     {
         $seen = [];
-        $count = $consumer->consume(function (Event $event) use (&$seen): void {
+        $count = $consumer->consume(function (CloudEvent $event) use (&$seen): void {
             $seen[] = $event->type;
         });
 
@@ -66,9 +66,9 @@ class ConsumerTest extends TestCase
         $this->feed->append('a');
 
         $consumer = $this->consumer();
-        $consumer->consume(fn (Event $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
 
-        $this->assertSame(0, $consumer->consume(fn (Event $event) => null));
+        $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
     }
 
     public function testResumesFromTheStoredPosition(): void
@@ -111,9 +111,9 @@ class ConsumerTest extends TestCase
 
         $consumer = $this->consumer($cursor);
 
-        $consumer->consume(fn (Event $event) => null);
-        $consumer->consume(fn (Event $event) => null);
-        $consumer->consume(fn (Event $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
 
         $this->assertSame(1, $cursor->loads);
     }
@@ -128,7 +128,7 @@ class ConsumerTest extends TestCase
         $seen = [];
 
         try {
-            $consumer->consume(function (Event $event) use (&$seen): void {
+            $consumer->consume(function (CloudEvent $event) use (&$seen): void {
                 if ($event->type === 'b') {
                     throw new \RuntimeException('nope');
                 }
@@ -153,7 +153,7 @@ class ConsumerTest extends TestCase
         $attempts = 0;
 
         try {
-            $consumer->consume(function (Event $event) use (&$attempts): void {
+            $consumer->consume(function (CloudEvent $event) use (&$attempts): void {
                 if ($event->type === 'b') {
                     $attempts++;
                     throw new \RuntimeException('nope');
@@ -177,7 +177,7 @@ class ConsumerTest extends TestCase
         $this->feed->append('a');
 
         try {
-            $this->consumer()->consume(fn (Event $event) => throw new \RuntimeException('nope'));
+            $this->consumer()->consume(fn (CloudEvent $event) => throw new \RuntimeException('nope'));
         } catch (\RuntimeException) {
             // Expected.
         }
@@ -191,7 +191,7 @@ class ConsumerTest extends TestCase
         $this->feed->append('b');
         $this->feed->append('c');
 
-        $this->assertSame(3, $this->consumer()->consume(fn (Event $event) => null));
+        $this->assertSame(3, $this->consumer()->consume(fn (CloudEvent $event) => null));
     }
 
     public function testDrainsABacklogInBatches(): void
@@ -202,10 +202,10 @@ class ConsumerTest extends TestCase
 
         $consumer = $this->consumer(batch: 4);
 
-        $this->assertSame(4, $consumer->consume(fn (Event $event) => null));
-        $this->assertSame(4, $consumer->consume(fn (Event $event) => null));
-        $this->assertSame(2, $consumer->consume(fn (Event $event) => null));
-        $this->assertSame(0, $consumer->consume(fn (Event $event) => null));
+        $this->assertSame(4, $consumer->consume(fn (CloudEvent $event) => null));
+        $this->assertSame(4, $consumer->consume(fn (CloudEvent $event) => null));
+        $this->assertSame(2, $consumer->consume(fn (CloudEvent $event) => null));
+        $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
     }
 
     /**
@@ -259,7 +259,7 @@ class ConsumerTest extends TestCase
         $this->feed->append('b');
 
         $consumer = $this->consumer();
-        $consumer->consume(fn (Event $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
 
         $consumer->reset();
 
@@ -275,9 +275,9 @@ class ConsumerTest extends TestCase
         $one = new Consumer($this->feed, 'one', $this->cursor);
         $two = new Consumer($this->feed, 'two', $this->cursor);
 
-        $this->assertSame(1, $one->consume(fn (Event $event) => null));
-        $this->assertSame(1, $two->consume(fn (Event $event) => null), 'The second consumer has its own position');
-        $this->assertSame(0, $one->consume(fn (Event $event) => null));
+        $this->assertSame(1, $one->consume(fn (CloudEvent $event) => null));
+        $this->assertSame(1, $two->consume(fn (CloudEvent $event) => null), 'The second consumer has its own position');
+        $this->assertSame(0, $one->consume(fn (CloudEvent $event) => null));
     }
 
     public function testPositionIsNullBeforeTheFirstRun(): void
@@ -315,7 +315,7 @@ class ConsumerTest extends TestCase
         $this->expectException(\Utopia\Feed\Exception\Unsupported::class);
 
         try {
-            $consumer->consume(fn (Event $event) => null);
+            $consumer->consume(fn (CloudEvent $event) => null);
         } finally {
             $this->assertSame($first, $this->cursor->load('invalidator'));
         }

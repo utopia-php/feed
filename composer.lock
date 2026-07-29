@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "52ee952ff068b03efb088193a317a726",
+    "content-hash": "47e874a6ca9e914a88ab31627d42e31b",
     "packages": [
         {
             "name": "brick/math",
@@ -2049,6 +2049,58 @@
                 "source": "https://github.com/utopia-php/client/tree/0.2.3"
             },
             "time": "2026-07-13T15:29:09+00:00"
+        },
+        {
+            "name": "utopia-php/cloudevents",
+            "version": "dev-feat-cloudevents-g2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/utopia-php/cloudevents.git",
+                "reference": "9cbc8dfe6b4ad5273b4ed1729f5a35112f20660d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/utopia-php/cloudevents/zipball/9cbc8dfe6b4ad5273b4ed1729f5a35112f20660d",
+                "reference": "9cbc8dfe6b4ad5273b4ed1729f5a35112f20660d",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.3"
+            },
+            "require-dev": {
+                "laravel/pint": "1.25.*",
+                "phpstan/phpstan": "2.0.*",
+                "phpunit/phpunit": "12.4.*"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Utopia\\CloudEvents\\": "src/CloudEvents"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Eldad Fux",
+                    "email": "eldad@appwrite.io"
+                }
+            ],
+            "description": "Lite & fast micro PHP CloudEvents implementation that is **easy to use**.",
+            "keywords": [
+                "cloudevents",
+                "framework",
+                "php",
+                "upf",
+                "utopia"
+            ],
+            "support": {
+                "issues": "https://github.com/utopia-php/cloudevents/issues",
+                "source": "https://github.com/utopia-php/cloudevents/tree/feat-cloudevents-g2"
+            },
+            "time": "2026-07-29T13:37:00+00:00"
         },
         {
             "name": "utopia-php/pools",
@@ -4193,7 +4245,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "utopia-php/cloudevents": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {

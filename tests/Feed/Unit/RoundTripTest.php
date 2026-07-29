@@ -11,7 +11,7 @@ use Utopia\Feed\Adapter\Http;
 use Utopia\Feed\Adapter\Memory as MemoryAdapter;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
 use Utopia\Tests\Unit\Support\FeedServer;
@@ -58,16 +58,18 @@ class RoundTripTest extends TestCase
         );
 
         $received = null;
-        $this->consumer()->consume(function (Event $event) use (&$received): void {
+        $this->consumer()->consume(function (CloudEvent $event) use (&$received): void {
             $received = $event;
         });
 
-        $this->assertInstanceOf(Event::class, $received);
+        $this->assertInstanceOf(CloudEvent::class, $received);
         $this->assertSame('io.appwrite.edge.invalidate-rule', $received->type);
         $this->assertSame('urn:appwrite:cloud:fra', $received->source);
         $this->assertSame('example.com', $received->subject);
-        $this->assertSame(['domain' => 'example.com'], $received->getData('tags'));
-        $this->assertTrue($received->getData('isAppwriteNetwork'));
+        $this->assertSame([
+            'tags' => ['domain' => 'example.com'],
+            'isAppwriteNetwork' => true,
+        ], $received->data);
     }
 
     public function testTheConsumerOnlyEverSeesEachEventOnce(): void
@@ -78,7 +80,7 @@ class RoundTripTest extends TestCase
 
         $consumer = $this->consumer();
         $seen = [];
-        $handler = function (Event $event) use (&$seen): void {
+        $handler = function (CloudEvent $event) use (&$seen): void {
             $seen[] = $event->type;
         };
 
@@ -105,7 +107,7 @@ class RoundTripTest extends TestCase
         }
 
         $seen = [];
-        $handled = $this->consumer()->consume(function (Event $event) use (&$seen): void {
+        $handled = $this->consumer()->consume(function (CloudEvent $event) use (&$seen): void {
             $seen[] = $event->type;
         });
 
@@ -122,12 +124,12 @@ class RoundTripTest extends TestCase
         $this->producer->append('a');
         $this->producer->append('b');
 
-        $this->consumer()->consume(fn (Event $event) => null);
+        $this->consumer()->consume(fn (CloudEvent $event) => null);
 
         $this->producer->append('c');
 
         $seen = [];
-        $this->consumer()->consume(function (Event $event) use (&$seen): void {
+        $this->consumer()->consume(function (CloudEvent $event) use (&$seen): void {
             $seen[] = $event->type;
         });
 
@@ -146,7 +148,7 @@ class RoundTripTest extends TestCase
 
         // Fails the first time it sees the poison event and succeeds after,
         // standing in for a dependency that was briefly unavailable.
-        $handler = function (Event $event) use (&$seen, &$attempts): void {
+        $handler = function (CloudEvent $event) use (&$seen, &$attempts): void {
             if ($event->type === 'poison') {
                 $attempts++;
 
@@ -181,10 +183,10 @@ class RoundTripTest extends TestCase
 
         $consumer = $this->consumer(batch: 2);
 
-        $consumer->consume(fn (Event $event) => null);
-        $consumer->consume(fn (Event $event) => null);
-        $consumer->consume(fn (Event $event) => null);
-        $consumer->consume(fn (Event $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
+        $consumer->consume(fn (CloudEvent $event) => null);
 
         $this->assertSame([
             'private, max-age=31536000', // 2 of 2 — settled history
@@ -201,11 +203,11 @@ class RoundTripTest extends TestCase
         $one = $this->consumer('one');
         $two = $this->consumer('two');
 
-        $this->assertSame(1, $one->consume(fn (Event $event) => null));
+        $this->assertSame(1, $one->consume(fn (CloudEvent $event) => null));
 
         $this->producer->append('b');
 
-        $this->assertSame(2, $two->consume(fn (Event $event) => null), 'The second consumer starts from the beginning');
-        $this->assertSame(1, $one->consume(fn (Event $event) => null), 'The first only sees what is new to it');
+        $this->assertSame(2, $two->consume(fn (CloudEvent $event) => null), 'The second consumer starts from the beginning');
+        $this->assertSame(1, $one->consume(fn (CloudEvent $event) => null), 'The first only sees what is new to it');
     }
 }

@@ -41,7 +41,8 @@
         "utopia-php/cache": "3.*",
         "utopia-php/client": "^0.2",
         "utopia-php/pools": "1.*",
-        "utopia-php/psr7": "^0.2"
+        "utopia-php/psr7": "^0.2",
+        "utopia-php/cloudevents": "dev-feat-cloudevents-g2"
     },
     "require-dev": {
         "laravel/pint": "^1.21",

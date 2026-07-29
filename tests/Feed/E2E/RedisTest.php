@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Adapter\Redis as RedisAdapter;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Redis as RedisCursor;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Id;
@@ -111,6 +111,35 @@ class RedisTest extends TestCase
         $this->assertSame([], $feed->read($second));
     }
 
+    public function testExtensionsAndDataschemaSurviveTheRoundTrip(): void
+    {
+        $this->feed()->publish(new CloudEvent(
+            id: '',
+            type: 'test',
+            dataschema: 'https://example.com/schema.json',
+            extensions: ['traceparent' => '00-abc-def-01'],
+        ));
+
+        $event = $this->feed()->read()[0];
+
+        $this->assertSame('https://example.com/schema.json', $event->dataschema);
+        $this->assertSame('00-abc-def-01', $event->getExtension('traceparent'));
+    }
+
+    public function testAnAbsentSubjectStaysAbsent(): void
+    {
+        $this->feed()->append('test');
+
+        $this->assertNull($this->feed()->read()[0]->subject);
+    }
+
+    public function testAScalarPayloadSurvivesTheRoundTrip(): void
+    {
+        $this->feed()->append('test', 'a string');
+
+        $this->assertSame('a string', $this->feed()->read()[0]->data);
+    }
+
     public function testNestedPayloadsSurviveTheRoundTrip(): void
     {
         $data = [
@@ -194,7 +223,7 @@ class RedisTest extends TestCase
         $last = $feed->append('b');
 
         $seen = [];
-        $handler = function (Event $event) use (&$seen): void {
+        $handler = function (CloudEvent $event) use (&$seen): void {
             $seen[] = $event->type;
         };
 
@@ -214,8 +243,8 @@ class RedisTest extends TestCase
 
         $feed->append('a');
 
-        $this->assertSame(1, (new Consumer($feed, 'one', $cursor))->consume(fn (Event $e) => null));
-        $this->assertSame(1, (new Consumer($feed, 'two', $cursor))->consume(fn (Event $e) => null));
+        $this->assertSame(1, (new Consumer($feed, 'one', $cursor))->consume(fn (CloudEvent $e) => null));
+        $this->assertSame(1, (new Consumer($feed, 'two', $cursor))->consume(fn (CloudEvent $e) => null));
     }
 
     public function testResetReplaysTheRetainedFeed(): void
@@ -227,11 +256,11 @@ class RedisTest extends TestCase
         $feed->append('b');
 
         $consumer = new Consumer($feed, 'invalidator', $cursor);
-        $consumer->consume(fn (Event $e) => null);
+        $consumer->consume(fn (CloudEvent $e) => null);
         $consumer->reset();
 
         $this->assertNull($cursor->load('invalidator'));
-        $this->assertSame(2, (new Consumer($feed, 'invalidator', $cursor))->consume(fn (Event $e) => null));
+        $this->assertSame(2, (new Consumer($feed, 'invalidator', $cursor))->consume(fn (CloudEvent $e) => null));
     }
 
     public function testCursorsAreStoredUnderTheFeedTheyBelongTo(): void

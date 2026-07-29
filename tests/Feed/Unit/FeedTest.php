@@ -7,7 +7,7 @@ namespace Utopia\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Adapter\Memory;
 use Utopia\Feed\Adapter\None;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
@@ -75,7 +75,7 @@ class FeedTest extends TestCase
             $this->feed->append($type);
         }
 
-        $this->assertSame(['a', 'b', 'c'], \array_map(fn (Event $e): string => $e->type, $this->feed->read()));
+        $this->assertSame(['a', 'b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $this->feed->read()));
     }
 
     public function testIdsAreStrictlyIncreasingEvenWithinAMillisecond(): void
@@ -165,7 +165,7 @@ class FeedTest extends TestCase
 
     public function testPublishStampsAPreparedEvent(): void
     {
-        $id = $this->feed->publish(new Event(id: 'ignored', type: 'test', data: ['a' => 'b'], subject: 's'));
+        $id = $this->feed->publish(new CloudEvent(id: 'ignored', type: 'test', data: ['a' => 'b'], subject: 's'));
 
         $event = $this->feed->read()[0];
 
@@ -177,9 +177,89 @@ class FeedTest extends TestCase
 
     public function testPublishKeepsATimeTheCallerSet(): void
     {
-        $this->feed->publish(new Event(id: '', type: 'test', time: '2020-01-01T00:00:00.000Z'));
+        $this->feed->publish(new CloudEvent(id: '', type: 'test', time: '2020-01-01T00:00:00.000Z'));
 
         $this->assertSame('2020-01-01T00:00:00.000Z', $this->feed->read()[0]->time);
+    }
+
+    /**
+     * A producer that attaches a `traceparent` means it to reach the consumer.
+     * Stamping the event on publish rebuilds it, and storing it flattens it, so
+     * either step could quietly drop an attribute this library does not model.
+     */
+    public function testExtensionAttributesSurviveAppendAndRead(): void
+    {
+        $this->feed->publish(new CloudEvent(
+            id: '',
+            type: 'test',
+            extensions: ['traceparent' => '00-abc-def-01', 'retrycount' => 2],
+        ));
+
+        $event = $this->feed->read()[0];
+
+        $this->assertSame('00-abc-def-01', $event->getExtension('traceparent'));
+        $this->assertSame(2, $event->getExtension('retrycount'));
+        $this->assertSame('urn:appwrite:cloud:fra', $event->source, 'Stamping still happened');
+    }
+
+    public function testDataschemaSurvivesAppendAndRead(): void
+    {
+        $this->feed->publish(new CloudEvent(
+            id: '',
+            type: 'test',
+            dataschema: 'https://example.com/schema.json',
+        ));
+
+        $this->assertSame('https://example.com/schema.json', $this->feed->read()[0]->dataschema);
+    }
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function payloads(): array
+    {
+        return [
+            'map' => [['tags' => ['domain' => 'example.com']]],
+            'list' => [['a', 'b', 'c']],
+            'nested list' => [[['x' => 1], ['x' => 2]]],
+            'string' => ['a string'],
+            'number' => [42],
+            'float' => [1.5],
+            'boolean' => [true],
+            'null' => [null],
+            'empty' => [[]],
+        ];
+    }
+
+    /**
+     * The JSON event format leaves `data` unrestricted, so a list or a scalar
+     * has to survive as itself — a list must not come back as a map.
+     *
+     * @dataProvider payloads
+     */
+    public function testAnyJsonPayloadSurvivesTheRoundTrip(mixed $data): void
+    {
+        $this->feed->append('test', $data);
+
+        $this->assertSame($data, $this->feed->read()[0]->data);
+    }
+
+    /**
+     * CloudEvents models an absent subject as null rather than an empty string,
+     * so a caller checking for one must check for null.
+     */
+    public function testAnEventWithNoSubjectHasANullSubject(): void
+    {
+        $this->feed->append('test');
+
+        $this->assertNull($this->feed->read()[0]->subject);
+    }
+
+    public function testASubjectSurvivesAppendAndRead(): void
+    {
+        $this->feed->append('test', [], 'example.com');
+
+        $this->assertSame('example.com', $this->feed->read()[0]->subject);
     }
 
     public function testPollReturnsImmediatelyWhenEventsAreWaiting(): void
@@ -220,7 +300,7 @@ class FeedTest extends TestCase
             $feed->append($type);
         }
 
-        $this->assertSame(['c', 'd', 'e'], \array_map(fn (Event $e): string => $e->type, $feed->read()));
+        $this->assertSame(['c', 'd', 'e'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read()));
     }
 
     /**
@@ -236,7 +316,7 @@ class FeedTest extends TestCase
         $feed->append('c');
 
         $this->assertSame(2, $adapter->count());
-        $this->assertSame(['b', 'c'], \array_map(fn (Event $e): string => $e->type, $feed->read($first)));
+        $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read($first)));
     }
 
     public function testExposesItsIdentity(): void

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Feed\Adapter;
 
 use Utopia\Feed\Adapter;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Pools\Pool as UtopiaPool;
 
 /**
@@ -32,7 +32,7 @@ class Pool extends Adapter
         parent::__construct($name);
     }
 
-    public function append(Event $event): string
+    public function append(CloudEvent $event): string
     {
         return $this->pool->use(fn (\Redis|\RedisCluster $redis): string => $this->adapter($redis)->append($event));
     }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Feed\Adapter;
 
 use Utopia\Feed\Adapter;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Id;
 
@@ -52,7 +52,7 @@ class Redis extends Adapter
         return 'feed:' . $this->name;
     }
 
-    public function append(Event $event): string
+    public function append(CloudEvent $event): string
     {
         try {
             $id = $this->redis->xAdd($this->getKey(), '*', self::encode($event), $this->maxSize, true);

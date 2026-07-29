@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
+use Utopia\CloudEvents\CloudEvent;
+use Utopia\CloudEvents\Exception as CloudEventsException;
 use Utopia\Feed\Exception\Invalid;
 
 /**
@@ -50,7 +52,7 @@ abstract class Adapter
      *         never partially — a caller that gets an id back can tell every
      *         consumer will see the event.
      */
-    abstract public function append(Event $event): string;
+    abstract public function append(CloudEvent $event): string;
 
     /**
      * Read up to $limit events strictly after $lastEventId, oldest first, or
@@ -62,7 +64,7 @@ abstract class Adapter
      * @param int $timeout Milliseconds to wait for an event before giving up,
      *        honoured only when {@see pollable()} is true; {@see Feed::poll()}
      *        handles the wait for every other adapter.
-     * @return list<Event>
+     * @return list<CloudEvent>
      * @throws Invalid When $lastEventId is not a feed position.
      * @throws Exception When the backend cannot be read.
      */
@@ -83,51 +85,88 @@ abstract class Adapter
     /**
      * The backend fields an event is stored as.
      *
-     * `data` is JSON so the payload can nest; everything else is a flat string
-     * because those are the fields a backend may want to index or filter on.
-     * The id is not among them — it is the key the entry is stored under.
+     * `data` and `extensions` are JSON so they can hold what CloudEvents lets
+     * them hold; every other attribute is a flat string, because those are the
+     * ones a backend may want to index or filter on. The id is not among them
+     * — it is the key the entry is stored under.
+     *
+     * Extensions are stored rather than dropped: a producer that attaches one
+     * — a `traceparent`, say — means it to reach the consumer, and losing it
+     * on the way through the backend would be invisible at both ends.
      *
      * @return array<string, string>
      * @throws Invalid When the payload cannot be encoded.
      */
-    protected static function encode(Event $event): array
+    protected static function encode(CloudEvent $event): array
     {
-        try {
-            $data = \json_encode($event->data, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $error) {
-            throw new Invalid('Feed event data must be JSON encodable: ' . $error->getMessage(), previous: $error);
-        }
-
         return [
             'type' => $event->type,
             'source' => $event->source,
-            'subject' => $event->subject,
+            // CloudEvents models an absent subject as null. A backend field is
+            // a string, so it is normalized here rather than stored as a null
+            // that would read back as "" on one backend and break on another.
+            'subject' => $event->subject ?? '',
             'time' => $event->time,
-            'data' => $data,
+            'dataschema' => $event->dataschema ?? '',
+            'data' => self::json($event->data, 'data'),
+            'extensions' => self::json($event->getExtensions(), 'extensions'),
         ];
     }
 
     /**
      * Rebuild an event from what {@see encode()} stored.
      *
-     * Undecodable payloads become an empty array rather than an error: the
-     * event still happened, its id is still a valid position, and refusing to
-     * return it would wedge every consumer behind it forever.
+     * Decoded leniently, for the same reason {@see Protocol::decode()} is: the
+     * event happened, its id is a valid position, and refusing to return it
+     * over one malformed attribute would wedge every consumer behind it.
      *
      * @param array<array-key, mixed> $fields
+     * @throws Invalid When the stored entry cannot be read as an event at all.
      */
-    protected static function decode(string $id, array $fields): Event
+    protected static function decode(string $id, array $fields): CloudEvent
     {
-        $data = \json_decode(self::field($fields, 'data'), true);
+        $extensions = \json_decode(self::field($fields, 'extensions'), true);
 
-        return new Event(
-            id: $id,
-            type: self::field($fields, 'type'),
-            data: \is_array($data) ? $data : [],
-            source: self::field($fields, 'source'),
-            subject: self::field($fields, 'subject'),
-            time: self::field($fields, 'time'),
-        );
+        $event = [
+            'specversion' => CloudEvent::SPECVERSION,
+            'id' => $id,
+            'type' => self::field($fields, 'type'),
+            'source' => self::field($fields, 'source'),
+            'time' => self::field($fields, 'time'),
+            'data' => \json_decode(self::field($fields, 'data'), true),
+            ...(\is_array($extensions) ? $extensions : []),
+        ];
+
+        // The inverse of the normalization in encode(): these two are nullable
+        // on a CloudEvent, and a backend field cannot hold a null, so an empty
+        // stored field means the attribute was absent. Passing the empty string
+        // through instead would turn "no subject" into "a subject that is the
+        // empty string" on every round trip through a backend.
+        foreach (['subject', 'dataschema'] as $optional) {
+            $value = self::field($fields, $optional);
+
+            if ($value !== '') {
+                $event[$optional] = $value;
+            }
+        }
+
+        try {
+            return CloudEvent::fromArray($event, lenient: true);
+        } catch (CloudEventsException $error) {
+            throw new Invalid("Feed entry {$id} could not be read as an event: {$error->getMessage()}", previous: $error);
+        }
+    }
+
+    /**
+     * @throws Invalid When the value cannot be encoded.
+     */
+    private static function json(mixed $value, string $attribute): string
+    {
+        try {
+            return \json_encode($value, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $error) {
+            throw new Invalid("Feed event {$attribute} must be JSON encodable: {$error->getMessage()}", previous: $error);
+        }
     }
 
     /**

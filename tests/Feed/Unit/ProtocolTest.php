@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Protocol;
 
@@ -30,8 +30,8 @@ class ProtocolTest extends TestCase
     public function testEncodesABatch(): void
     {
         $payload = Protocol::encode([
-            new Event(id: '1-0', type: 'a', data: ['x' => 1], source: 'urn:test', subject: 's', time: 't'),
-            new Event(id: '1-1', type: 'b'),
+            new CloudEvent(id: '1-0', type: 'a', data: ['x' => 1], source: 'urn:test', subject: 's', time: 't'),
+            new CloudEvent(id: '1-1', type: 'b'),
         ]);
 
         $this->assertSame(2, $payload['total']);
@@ -49,8 +49,8 @@ class ProtocolTest extends TestCase
     public function testDecodesWhatItEncoded(): void
     {
         $events = [
-            new Event(id: '1-0', type: 'a', data: ['x' => 1], source: 'urn:test', subject: 's', time: 't'),
-            new Event(id: '1-1', type: 'b'),
+            new CloudEvent(id: '1-0', type: 'a', data: ['x' => 1], source: 'urn:test', subject: 's', time: 't'),
+            new CloudEvent(id: '1-1', type: 'b'),
         ];
 
         $this->assertEquals($events, Protocol::decode(Protocol::encode($events)));
@@ -77,6 +77,22 @@ class ProtocolTest extends TestCase
     }
 
     /**
+     * One event as a producer would put it on the wire.
+     *
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    private static function raw(string $id, string $type, array $overrides = []): array
+    {
+        return \array_merge([
+            'specversion' => '1.0',
+            'id' => $id,
+            'type' => $type,
+            'source' => 'urn:test',
+        ], $overrides);
+    }
+
+    /**
      * An event with no id has no position, so a consumer cannot record having
      * passed it. Returning the usable prefix lets those events be handled and
      * the position advance to the last of them; the broken event is then at
@@ -86,22 +102,22 @@ class ProtocolTest extends TestCase
     {
         $events = Protocol::decode([
             'events' => [
-                ['id' => '1-0', 'type' => 'a'],
-                ['id' => '1-1', 'type' => 'b'],
-                ['type' => 'no id'],
-                ['id' => '1-3', 'type' => 'd'],
+                self::raw('1-0', 'a'),
+                self::raw('1-1', 'b'),
+                self::raw('', 'no id'),
+                self::raw('1-3', 'd'),
             ],
         ]);
 
         $this->assertCount(2, $events);
-        $this->assertSame(['a', 'b'], \array_map(fn (Event $e): string => $e->type, $events));
+        $this->assertSame(['a', 'b'], \array_map(fn (CloudEvent $e): string => $e->type, $events));
     }
 
     public function testFailsWhenTheFirstEventIsUndecodable(): void
     {
         $this->expectException(Invalid::class);
 
-        Protocol::decode(['events' => [['type' => 'no id'], ['id' => '1-1', 'type' => 'b']]]);
+        Protocol::decode(['events' => [self::raw('', 'no id'), self::raw('1-1', 'b')]]);
     }
 
     public function testFailsWhenTheFirstEntryIsNotAnEvent(): void
@@ -113,9 +129,44 @@ class ProtocolTest extends TestCase
 
     public function testKeepsTheEventsBeforeAnEntryThatIsNotAnEvent(): void
     {
-        $events = Protocol::decode(['events' => [['id' => '1-0', 'type' => 'a'], 'a string']]);
+        $events = Protocol::decode(['events' => [self::raw('1-0', 'a'), 'a string']]);
 
         $this->assertCount(1, $events);
+    }
+
+    /**
+     * `specversion` is REQUIRED by the spec and a feed's own producer always
+     * sends it, so an entry without one is not a CloudEvent at all — the batch
+     * stops there rather than the attribute being invented.
+     */
+    public function testFailsWhenAnEventIsNotACloudEventAtAll(): void
+    {
+        $this->expectException(Invalid::class);
+
+        Protocol::decode(['events' => [['id' => '1-0', 'type' => 'a']]]);
+    }
+
+    /**
+     * The forward-compatibility property a feed depends on: it is read by
+     * consumers older than the producer by design, so a producer that adds an
+     * attribute or moves the spec version forward must not stop one that
+     * predates it.
+     */
+    public function testSurvivesAProducerThatMovedAhead(): void
+    {
+        $events = Protocol::decode([
+            'events' => [
+                self::raw('1-0', 'a', [
+                    'specversion' => '1.1',
+                    'somethingnew' => 'ignored',
+                    'traceparent' => '00-abc-def-01',
+                ]),
+            ],
+        ]);
+
+        $this->assertCount(1, $events);
+        $this->assertSame('1.1', $events[0]->specversion);
+        $this->assertSame('00-abc-def-01', $events[0]->getExtension('traceparent'));
     }
 
     /**

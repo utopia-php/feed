@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
+use Utopia\CloudEvents\CloudEvent;
+
 /**
  * An append-only, strongly ordered sequence of events that consumers pull.
  *
@@ -93,24 +95,25 @@ class Feed
      * Append an event and return its position in the feed.
      *
      * @param string $type What happened, in reverse-DNS notation.
-     * @param array<string, mixed> $data Payload, JSON encodable.
+     * @param mixed $data Payload, JSON encodable. Usually a map, but the JSON
+     *        event format leaves it unrestricted, so a list or a scalar is
+     *        equally valid.
      * @param string $subject The one business object this is about, if there
-     *        is one.
+     *        is one. Empty means none, which is how CloudEvents models it.
      * @throws Exception\Invalid When $type is empty or $data cannot be
      *         encoded.
      * @throws Exception When the backend rejects the append.
      */
-    public function append(string $type, array $data = [], string $subject = ''): string
+    public function append(string $type, mixed $data = [], string $subject = ''): string
     {
         if ($type === '') {
             throw new Exception\Invalid('Feed event type is required');
         }
 
-        return $this->publish(new Event(
-            id: '',
+        return $this->publish(new CloudEvent(
             type: $type,
+            subject: $subject === '' ? null : $subject,
             data: $data,
-            subject: $subject,
         ));
     }
 
@@ -127,20 +130,20 @@ class Feed
      *         be encoded.
      * @throws Exception When the backend rejects the append.
      */
-    public function publish(Event $event): string
+    public function publish(CloudEvent $event): string
     {
         if ($event->type === '') {
             throw new Exception\Invalid('Feed event type is required');
         }
 
-        return $this->adapter->append(new Event(
-            id: '',
-            type: $event->type,
-            data: $event->data,
-            source: $this->source,
-            subject: $event->subject,
-            time: $event->time !== '' ? $event->time : Event::now(),
-        ));
+        // Stamped with the withers rather than rebuilt, so anything this
+        // library does not model itself — a dataschema, an extension attribute
+        // such as a traceparent — survives the append untouched.
+        return $this->adapter->append(
+            $event
+                ->withSource($this->source)
+                ->withTime($event->time !== '' ? $event->time : null)
+        );
     }
 
     /**
@@ -149,7 +152,7 @@ class Feed
      *
      * Returns immediately, with an empty list when the consumer is caught up.
      *
-     * @return list<Event>
+     * @return list<CloudEvent>
      * @throws Exception\Invalid When $lastEventId is not a feed position.
      * @throws Exception When the backend cannot be read.
      */
@@ -175,7 +178,7 @@ class Feed
      * are enabled. Without them it holds the worker for the duration, so run
      * it with hooks on or keep the timeout at 0.
      *
-     * @return list<Event>
+     * @return list<CloudEvent>
      * @throws Exception\Invalid When $lastEventId is not a feed position.
      * @throws Exception When the backend cannot be read.
      */

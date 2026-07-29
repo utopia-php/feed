@@ -10,7 +10,7 @@ use Utopia\Client;
 use Utopia\Feed\Adapter\Http;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Exception\Unsupported;
@@ -35,8 +35,8 @@ class HttpAdapterTest extends TestCase
     public function testReadsAFeedOverHttp(): void
     {
         [$feed] = $this->feed([FakeTransport::json(Protocol::encode([
-            new Event(id: '1-0', type: 'io.appwrite.edge.invalidate-rule', data: ['tags' => ['domain' => 'example.com']]),
-            new Event(id: '1-1', type: 'io.appwrite.edge.invalidate'),
+            new CloudEvent(id: '1-0', type: 'io.appwrite.edge.invalidate-rule', data: ['tags' => ['domain' => 'example.com']]),
+            new CloudEvent(id: '1-1', type: 'io.appwrite.edge.invalidate'),
         ]))]);
 
         $events = $feed->read();
@@ -230,7 +230,7 @@ class HttpAdapterTest extends TestCase
      */
     public function testWorksThroughTheClientItself(): void
     {
-        $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new Event(id: '1-0', type: 'a')]))]);
+        $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-0', type: 'a')]))]);
 
         $client = (new Client($transport))->withHeaders(['x-appwrite-jwt' => 'token']);
         $feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
@@ -249,10 +249,10 @@ class HttpAdapterTest extends TestCase
     {
         [$feed, $transport] = $this->feed([
             FakeTransport::json(Protocol::encode([
-                new Event(id: '1-0', type: 'a'),
-                new Event(id: '1-1', type: 'b'),
+                new CloudEvent(id: '1-0', type: 'a'),
+                new CloudEvent(id: '1-1', type: 'b'),
             ])),
-            FakeTransport::json(Protocol::encode([new Event(id: '1-2', type: 'c')])),
+            FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-2', type: 'c')])),
             FakeTransport::json(Protocol::encode([])),
         ]);
 
@@ -260,7 +260,7 @@ class HttpAdapterTest extends TestCase
         $consumer = new Consumer($feed, 'invalidator', $cursor);
 
         $seen = [];
-        $handler = function (Event $event) use (&$seen): void {
+        $handler = function (CloudEvent $event) use (&$seen): void {
             $seen[] = $event->type;
         };
 

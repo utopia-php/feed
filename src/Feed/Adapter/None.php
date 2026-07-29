@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Feed\Adapter;
 
 use Utopia\Feed\Adapter;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Unsupported;
 
 /**
@@ -27,7 +27,7 @@ class None extends Adapter
         parent::__construct($name);
     }
 
-    public function append(Event $event): string
+    public function append(CloudEvent $event): string
     {
         throw new Unsupported("No feed backend is configured for the {$this->name} feed");
     }

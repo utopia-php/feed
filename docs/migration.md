@@ -85,7 +85,7 @@ $consumer = new Consumer($edgeFeed, FastlyConsumer::NAME, new Cursor\Pool($pool,
 $purged = 0;
 $seen = [];
 
-$consumer->consume(function (Event $event) use (&$purged, &$seen): void {
+$consumer->consume(function (CloudEvent $event) use (&$purged, &$seen): void {
     $url = $this->purgeUrl($event);
     if ($url === null || isset($seen[$url])) {
         return;
@@ -97,14 +97,14 @@ $consumer->consume(function (Event $event) use (&$purged, &$seen): void {
 });
 ```
 
-`purgeUrl()` reads a typed `Event` instead of an array:
+`purgeUrl()` reads a typed `CloudEvent` instead of an array:
 
 ```php
 if ($event->type !== EdgeFeed::EVENT_INVALIDATE_RULE) {
     return null;
 }
 
-$tags = $event->getData('tags', []);
+$tags = $event->data['tags'] ?? [];
 $domain = \is_array($tags) ? ($tags['domain'] ?? '') : '';
 ```
 
@@ -114,7 +114,7 @@ $domain = \is_array($tags) ? ($tags['domain'] ?? '') : '';
 | --- | --- |
 | `Feed\Consumer` | `Consumer`, plus a handler |
 | `Feed\Cursor` | `Cursor\Cache` |
-| `Feed\Event` | `Event` |
+| `Feed\Event` | `Utopia\CloudEvents\CloudEvent` — this library has no event type of its own |
 | `Feed\Event::FEED` and the type constants | Stay — they name cloud's feed and its events |
 | `Manager::fetchFeed()` | `Adapter\Http`, over `utopia-php/client` |
 | `Consumer::TIMEOUT_MARGIN` | `Protocol::TIMEOUT_MARGIN` |
@@ -145,8 +145,8 @@ with the invalidator that defines what a usable tag is, so it moves into the
 handler:
 
 ```php
-$consumer->consume(function (Event $event) use ($invalidator): void {
-    $tags = $event->getData('tags', []);
+$consumer->consume(function (CloudEvent $event) use ($invalidator): void {
+    $tags = $event->data['tags'] ?? [];
     $tags = \is_array($tags) ? Invalidator::normalize($tags) : [];
 
     if ($tags === []) {
@@ -191,3 +191,7 @@ These were load-bearing in the original implementations and are preserved:
   stops visibly rather than quietly losing events.
 - **`Cache-Control` is computed from the batch**, and `public` is opt-in rather
   than a decision baked into one endpoint.
+- **Events are `Utopia\CloudEvents\CloudEvent`**, not a bespoke type. `subject`
+  is nullable, so an event without one reads back as `null` rather than `''`;
+  `data` is unrestricted, so a list or scalar payload round-trips as itself; and
+  `dataschema` and extension attributes now survive an append and a read.

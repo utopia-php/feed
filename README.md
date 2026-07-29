@@ -48,7 +48,7 @@ on — a cache tag to drop, a record to refresh, a config to reload.
 ## Features
 
 - **Ordered, resumable log** — consumers page by event id, and hold their own position
-- **CloudEvents** — events are [CloudEvents](https://cloudevents.io/), as http-feeds requires
+- **CloudEvents** — events *are* [`utopia-php/cloudevents`](https://github.com/utopia-php/cloudevents) events, as http-feeds requires
 - **Adapters** — Redis streams, a pooled Redis, in-memory, or another service's feed over HTTP
 - **Long polling** — subscribe in near real time without hammering the producer
 - **Cursors** — positions in a Utopia cache, in Redis, or in memory
@@ -145,9 +145,9 @@ A `Consumer` reads from where it last got to, hands each new event to a handler,
 and records how far it got:
 
 ```php
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
-use Utopia\Feed\Event;
 
 $consumer = new Consumer(
     feed: $feed,
@@ -155,8 +155,8 @@ $consumer = new Consumer(
     cursor: new CacheCursor($cache, 'edge'),
 );
 
-$handled = $consumer->consume(function (Event $event) use ($router) {
-    $router->invalidate($event->getData('tags', []));
+$handled = $consumer->consume(function (CloudEvent $event) use ($router) {
+    $router->invalidate($event->data['tags'] ?? []);
 });
 ```
 
@@ -236,25 +236,44 @@ a warning rather than a failure: it keeps its position in memory and carries on,
 and only a restart before the store recovers replays anything. Pass
 `onWarning()` to hear about it.
 
-## Interoperability
+## Events
 
-`Event::toArray()` emits every CloudEvents v1.0 attribute, always populated and
-never null, so the wire form is portable to stricter CloudEvents readers without
-a conversion step. [`utopia-php/cloudevents`](https://github.com/utopia-php/cloudevents)
-consumes it directly, and round-trips back:
+There is no event type in this library. Events **are**
+[`Utopia\CloudEvents\CloudEvent`](https://github.com/utopia-php/cloudevents)
+objects, so anything already typed against one takes a feed event directly, and
+everything a CloudEvent carries — `dataschema`, extension attributes such as a
+`traceparent` — survives an append and a read untouched:
 
 ```php
-$cloudEvent = CloudEvent::fromArray($event->toArray());   // works, and validate()s
-$event = Event::fromArray($cloudEvent->toArray());        // identical event back
+use Utopia\CloudEvents\CloudEvent;
+
+$consumer->consume(function (CloudEvent $event) {
+    $tags = $event->data['tags'] ?? [];
+    $trace = $event->getExtension('traceparent');
+});
 ```
 
-That is why this library models its own event rather than depending on one. A
-feed consumer reads events from a producer it does not control, so it has to be
-strict about the single field it cannot proceed without — `id`, which is its
-position in the feed — and tolerant about everything else, including attributes
-a future producer adds or a `specversion` it has never heard of. A general
-CloudEvents type has no reason to make that trade, and the two rules point in
-opposite directions.
+`data` is unrestricted, as the JSON event format requires — a map, a list, a
+string, a number or null are all valid payloads and all round-trip as
+themselves. `subject` is nullable, so an event with no subject reads back as
+`null` rather than `''`.
+
+The one thing this library decides for itself is how a batch is decoded, and it
+is deliberately not `CloudEvent::fromArray()`'s default:
+
+- **Strict about `id`.** For a feed the id *is* the consumer's position, so an
+  event without one cannot be recorded as passed. The spec makes `id` required
+  too; `Protocol` enforces exactly that one attribute rather than calling
+  `validate()`, which would also demand a `source` a feed has no use for.
+- **Tolerant about everything else.** Decoding runs with `lenient: true` and
+  `allowUnknownSpecversion: true`, so a producer that adds an attribute, omits
+  an optional one, or moves the spec forward does not stop a consumer that
+  predates it. A feed is read by consumers older than the producer *by design*,
+  and that is what makes a staged rollout safe.
+
+An entry that is not a CloudEvent at all — no `specversion`, no `type` — is not
+tolerated, because that is a producer sending something other than what the feed
+is specified to carry.
 
 ## Delivery semantics
 

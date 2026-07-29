@@ -7,7 +7,7 @@ namespace Utopia\Feed\Adapter;
 use Psr\Http\Client\ClientExceptionInterface;
 use Utopia\Client\Adapter as ClientAdapter;
 use Utopia\Feed\Adapter;
-use Utopia\Feed\Event;
+use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
@@ -86,7 +86,7 @@ class Http extends Adapter
      * @throws Unsupported Always. A consumer cannot append to a feed it does
      *         not own; call the producer's own API instead.
      */
-    public function append(Event $event): string
+    public function append(CloudEvent $event): string
     {
         throw new Unsupported("The {$this->name} feed is read over HTTP and cannot be appended to");
     }

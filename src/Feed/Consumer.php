@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
+use Utopia\CloudEvents\CloudEvent;
+
 /**
  * Reads a feed from where it last got to, hands each new event to a handler,
  * and records how far it got.
@@ -12,8 +14,8 @@ namespace Utopia\Feed;
  * $consumer = new Consumer($feed, 'cache-invalidator', new Cursor\Cache($cache, 'edge'));
  *
  * // On a timer, or in a loop with a long-poll timeout:
- * $consumer->consume(function (Event $event) use ($cache) {
- *     $cache->purge($event->getData('tag'));
+ * $consumer->consume(function (CloudEvent $event) use ($cache) {
+ *     $cache->purge($event->data['tag'] ?? '');
  * });
  * ```
  *
@@ -128,7 +130,7 @@ class Consumer
      * Hand every event not yet seen to $handler, oldest first, and return how
      * many it accepted.
      *
-     * @param callable(Event): void $handler Throws to reject an event, which
+     * @param callable(CloudEvent): void $handler Throws to reject an event, which
      *        stops the run and leaves the position before it.
      * @return int Events handled. Zero means the consumer is caught up.
      * @throws Exception When the feed cannot be read. The position stays where

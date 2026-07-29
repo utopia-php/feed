@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
+use Utopia\CloudEvents\CloudEvent;
+use Utopia\CloudEvents\Exception as CloudEventsException;
 use Utopia\Feed\Exception\Invalid;
 
 /**
@@ -110,25 +112,37 @@ final class Protocol
     /**
      * The response body for a batch.
      *
-     * @param list<Event> $events
+     * @param list<CloudEvent> $events
      * @return array{total: int, events: list<array<string, mixed>>}
      */
     public static function encode(array $events): array
     {
         return [
             self::KEY_TOTAL => \count($events),
-            self::KEY_EVENTS => \array_map(static fn (Event $event): array => $event->toArray(), $events),
+            self::KEY_EVENTS => \array_map(static fn (CloudEvent $event): array => $event->toArray(), $events),
         ];
     }
 
     /**
      * Read a batch out of a response body.
      *
+     * Decoded leniently, and tolerating a `specversion` this consumer has
+     * never seen: a feed is read by consumers older than the producer *by
+     * design*, so a producer that adds an attribute, omits an optional one, or
+     * moves the spec forward must not stop a consumer that predates it. That
+     * is what makes a staged rollout safe, and it is the one place this
+     * library needs a reader more forgiving than a general CloudEvents one.
+     *
+     * The exception is `id`, which is enforced here and nowhere else in the
+     * spec's terms: for a feed the id *is* the consumer's position, so an event
+     * without one cannot be recorded as passed. {@see CloudEvent::validate()}
+     * requires `source` too, which a feed has no need of, so this checks the
+     * one attribute it actually depends on rather than calling it.
+     *
      * Stops at the first event that cannot be decoded and returns the ones
-     * before it, rather than dropping it and carrying on. An event with no id
-     * has no position, so a consumer cannot record having passed it; skipping
-     * it would mean every event after it is acknowledged under a cursor that
-     * never advanced past the gap, and the next restart would replay them all.
+     * before it, rather than dropping it and carrying on. Skipping it would
+     * mean every event after it is acknowledged under a cursor that never
+     * advanced past the gap, and the next restart would replay them all.
      *
      * Returning the prefix keeps the events that *are* usable moving: the
      * consumer applies them, advances to the last one, and meets the broken
@@ -136,7 +150,7 @@ final class Protocol
      * salvage, this throws and the feed visibly stops instead of quietly
      * losing events.
      *
-     * @return list<Event>
+     * @return list<CloudEvent>
      * @throws Invalid When the payload is not a batch, or when the very first
      *         event in it cannot be decoded.
      */
@@ -155,19 +169,17 @@ final class Protocol
 
         /** @var mixed $event */
         foreach ($raw as $event) {
-            if (!\is_array($event)) {
-                if ($events === []) {
+            try {
+                if (!\is_array($event)) {
                     throw new Invalid('Feed batch contains an entry that is not an event');
                 }
 
-                break;
-            }
-
-            try {
-                $events[] = Event::fromArray($event);
-            } catch (Invalid $error) {
+                $events[] = self::event($event);
+            } catch (Invalid | CloudEventsException $error) {
                 if ($events === []) {
-                    throw $error;
+                    throw $error instanceof Invalid
+                        ? $error
+                        : new Invalid('Feed batch contains an event that cannot be read: ' . $error->getMessage(), previous: $error);
                 }
 
                 break;
@@ -175,6 +187,24 @@ final class Protocol
         }
 
         return $events;
+    }
+
+    /**
+     * Decode one event, enforcing the only attribute a feed cannot do without.
+     *
+     * @param array<array-key, mixed> $raw
+     * @throws Invalid When the event carries no usable id.
+     * @throws CloudEventsException When it is not a CloudEvent at all.
+     */
+    private static function event(array $raw): CloudEvent
+    {
+        $event = CloudEvent::fromArray($raw, lenient: true, allowUnknownSpecversion: true);
+
+        if ($event->id === '') {
+            throw new Invalid('Feed event is missing an id');
+        }
+
+        return $event;
     }
 
     /**
