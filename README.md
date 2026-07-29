@@ -331,7 +331,8 @@ is deliberately not `CloudEvent::fromArray()`'s default:
 - **Strict about `id`.** For a feed the id *is* the consumer's position, so an
   event without one cannot be recorded as passed. The spec makes `id` required
   too; `Protocol` enforces exactly that one attribute rather than calling
-  `validate()`, which would also demand a `source` a feed has no use for.
+  `validate()`, which would also demand a well-formed URI-reference `source` —
+  a spec requirement, but not one a feed consumer depends on.
 - **Tolerant about everything else.** Decoding runs with `lenient: true` and
   `allowUnknownSpecversion: true`, so a producer that adds an attribute, omits
   an optional one, or moves the spec forward does not stop a consumer that

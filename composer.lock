@@ -2056,12 +2056,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/utopia-php/cloudevents.git",
-                "reference": "9cbc8dfe6b4ad5273b4ed1729f5a35112f20660d"
+                "reference": "68cd50590b94e250970f226a0067caf471adf42e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/utopia-php/cloudevents/zipball/9cbc8dfe6b4ad5273b4ed1729f5a35112f20660d",
-                "reference": "9cbc8dfe6b4ad5273b4ed1729f5a35112f20660d",
+                "url": "https://api.github.com/repos/utopia-php/cloudevents/zipball/68cd50590b94e250970f226a0067caf471adf42e",
+                "reference": "68cd50590b94e250970f226a0067caf471adf42e",
                 "shasum": ""
             },
             "require": {
@@ -2100,7 +2100,7 @@
                 "issues": "https://github.com/utopia-php/cloudevents/issues",
                 "source": "https://github.com/utopia-php/cloudevents/tree/feat-cloudevents-g2"
             },
-            "time": "2026-07-29T13:37:00+00:00"
+            "time": "2026-07-29T13:53:17+00:00"
         },
         {
             "name": "utopia-php/pools",

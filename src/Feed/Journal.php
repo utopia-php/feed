@@ -138,7 +138,6 @@ abstract class Journal
             'source' => self::field($fields, 'source'),
             'time' => self::field($fields, 'time'),
             'data' => \json_decode(self::field($fields, 'data'), true),
-            ...(\is_array($extensions) ? $extensions : []),
         ];
 
         // The inverse of the normalization in encode(): these two are nullable
@@ -153,6 +152,13 @@ abstract class Journal
                 $event[$optional] = $value;
             }
         }
+
+        // The union operator rather than a spread, which renumbers integer keys.
+        // An extension name of only digits is legal — the spec allows [a-z0-9]+ —
+        // and PHP stores such a name as an int key, so a spread would silently
+        // rename "123" to the next free position and lose the attribute.
+        // Spec attributes stay on the left, so they win any collision.
+        $event += \is_array($extensions) ? $extensions : [];
 
         try {
             return CloudEvent::fromArray($event, lenient: true);

@@ -202,6 +202,26 @@ class FeedTest extends TestCase
         $this->assertSame('urn:appwrite:cloud:fra', $event->source, 'Stamping still happened');
     }
 
+    /**
+     * An extension name of only digits is legal — the spec allows `[a-z0-9]+` —
+     * and PHP stores such a name as an integer key. Anything that merges the
+     * extensions back in with a spread, or with `array_merge()`, renumbers that
+     * key and silently loses the attribute.
+     */
+    public function testADigitsOnlyExtensionNameSurvivesAppendAndRead(): void
+    {
+        $this->feed->publish(new CloudEvent(
+            id: '',
+            type: 'test',
+            extensions: ['123' => 'digits', 'trace' => 'ok'],
+        ));
+
+        $event = $this->feed->read()[0];
+
+        $this->assertSame('digits', $event->getExtension('123'));
+        $this->assertSame('ok', $event->getExtension('trace'));
+    }
+
     public function testDataschemaSurvivesAppendAndRead(): void
     {
         $this->feed->publish(new CloudEvent(

@@ -113,7 +113,9 @@ final class Protocol
      * The response body for a batch.
      *
      * @param list<CloudEvent> $events
-     * @return array{total: int, events: list<array<string, mixed>>}
+     * @return array{total: int, events: list<array<array-key, mixed>>} The keys
+     *         are not narrowed to strings because an extension attribute named
+     *         only of digits is legal, and PHP holds such a name as an int key.
      */
     public static function encode(array $events): array
     {
@@ -136,8 +138,9 @@ final class Protocol
      * The exception is `id`, which is enforced here and nowhere else in the
      * spec's terms: for a feed the id *is* the consumer's position, so an event
      * without one cannot be recorded as passed. {@see CloudEvent::validate()}
-     * requires `source` too, which a feed has no need of, so this checks the
-     * one attribute it actually depends on rather than calling it.
+     * also requires a well-formed URI-reference `source` — a spec requirement,
+     * but not one a feed consumer depends on — so this checks the single
+     * attribute it actually needs rather than calling it.
      *
      * Stops at the first event that cannot be decoded and returns the ones
      * before it, rather than dropping it and carrying on. Skipping it would
