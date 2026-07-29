@@ -353,12 +353,20 @@ is specified to carry.
 
 ## Delivery semantics
 
-**A handler must be safe to run twice on the same event.** There are three
+**A handler must be safe to run twice on the same event.** There are four
 independent reasons, and no arrangement of this library removes any of them:
 
 1. A handler can succeed and the position then fail to save.
 2. A run interrupted partway resumes from the last event that succeeded.
 3. A consumer whose position was lost restarts from the oldest retained event.
+4. Two processes sharing a consumer name can interleave inside `Cursor::save()`'s
+   read-compare-write and leave the older position stored, re-delivering what
+   the newer one had already handled.
+
+Every one of them **re-delivers; none of them skips.** That asymmetry is the
+whole design — an event handled twice is absorbed by an idempotent handler,
+whereas an event stepped over is gone, still sitting in the feed with nothing
+that will ever read it again.
 
 **A handler rejects an event by throwing.** That stops the run at that event and
 leaves the position before it, so the next run starts there and tries again.

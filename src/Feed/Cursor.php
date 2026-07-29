@@ -23,6 +23,12 @@ use Utopia\Feed\Exception\Invalid;
  *
  * One store can hold positions for many consumers of the same feed, keyed by
  * consumer name.
+ *
+ * Positions move forwards only. {@see save()} compares before writing and drops
+ * anything that is not an advance, which matters because a rolling restart runs
+ * two processes under one name for a moment. That comparison is not atomic, and
+ * the reasoning for leaving it that way — including what the residual race
+ * costs, which is a replay rather than a lost event — is on `save()`.
  */
 abstract class Cursor
 {
@@ -70,17 +76,41 @@ abstract class Cursor
      * ({@see Id::compare()}), so "never backwards" is decidable here in a way it
      * is not for a cursor store in general.
      *
-     * **The check is not atomic.** It reads, compares, then writes, so two
-     * processes can still interleave inside that window and leave the older
-     * position stored. Closing it entirely needs a compare-and-set the store
-     * can do in one operation, and every candidate costs more than the race
-     * does: Redis scores are doubles and cannot hold `<ms>-<seq>` exactly,
-     * `WATCH` leaves state on a connection that is about to go back into a
-     * pool, and a one-entry stream — which would be exact, since these ids
-     * *are* stream ids — changes the stored type and so breaks cursors written
-     * by an earlier version. The window is microseconds against a poll interval
-     * of seconds, and losing the race costs a replay, which every handler must
-     * already tolerate. It is a bounded, safe outcome, not a lost event.
+     * ## The check is not atomic
+     *
+     * It reads, compares, then writes. Two processes can interleave inside that
+     * window, both decide they are ahead, and leave the older position stored.
+     *
+     * **The consequence is a replay, which is the delivery guarantee rather
+     * than a departure from it.** A regressed position re-delivers events that
+     * were already handled; it never skips one, never loses one, and never
+     * advances past work that did not happen. Handlers are required to tolerate
+     * a repeat for three other reasons already — see {@see Consumer} — so this
+     * adds a fourth cause of something they must survive regardless, not a new
+     * kind of failure.
+     *
+     * Closing the window needs a compare-and-set the store performs in one
+     * operation, and it is not reachable across this abstraction:
+     *
+     * - `ZADD ... GT` is the native primitive, but scores are doubles and
+     *   cannot hold `<ms>-<seq>` exactly once the sequence is packed in.
+     * - `WATCH`/`MULTI` needs no scripting, but leaves watch state on a
+     *   connection that is about to go back into a pool.
+     * - A one-entry stream via `XADD` would be exact, since these ids *are*
+     *   Redis stream ids and Redis refuses to move one backwards natively — but
+     *   it changes the stored type, so cursors written by an earlier version
+     *   stop being readable.
+     * - {@see Cursor\Cache} has no portable compare-and-set at all: a Utopia
+     *   cache exposes leases, but `getGeneration()` returns `'0'` on adapters
+     *   that do not implement them. Any fix here would hold on some cache
+     *   backends and silently not on others, which is worse than one uniform,
+     *   stated guarantee.
+     *
+     * So the guarantee is deliberately the weaker, uniform one: a position
+     * never moves backwards **except** under a sub-millisecond interleave
+     * between two processes sharing a consumer name, whose cost is bounded
+     * replay. Run one process per name ({@see Consumer::__construct()}) and it
+     * cannot arise at all.
      *
      * @throws Exception When the store cannot be written.
      */
@@ -90,8 +120,7 @@ abstract class Cursor
      * Whether $eventId is worth storing for $consumer — that is, whether it is
      * a real position and a later one than what is already there.
      *
-     * The check every implementation applies before writing, unless it can do
-     * the same thing atomically ({@see Cursor\Redis} runs it as one script).
+     * The check every implementation applies before writing.
      *
      * Deliberately fails open. A position that cannot be compared — because the
      * store could not be read, or because what came back is not a position —

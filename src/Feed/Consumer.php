@@ -22,11 +22,20 @@ use Utopia\CloudEvents\CloudEvent;
  * ## What the handler must tolerate
  *
  * Delivery is at-least-once, so a handler will see the same event more than
- * once and must be safe to repeat. There are three separate reasons, and no
- * arrangement of this class removes any of them: a handler can succeed and the
- * position fail to save; a batch can be interrupted partway and replay from
- * the last event that succeeded; and a consumer whose position is lost
- * restarts from the oldest retained event.
+ * once and must be safe to repeat. There are four separate reasons, and no
+ * arrangement of this class removes any of them:
+ *
+ * 1. A handler can succeed and the position then fail to save.
+ * 2. A batch interrupted partway replays from the last event that succeeded.
+ * 3. A consumer whose position is lost restarts from the oldest retained event.
+ * 4. Two processes sharing a consumer name can interleave inside the
+ *    read-compare-write in {@see Cursor::save()} and leave the older position
+ *    stored, re-delivering what the newer one had already handled.
+ *
+ * Every one of them re-delivers; none of them skips. That asymmetry is the
+ * whole design — an event handled twice is absorbed by an idempotent handler,
+ * whereas an event stepped over is gone, still sitting in the feed with nothing
+ * that will ever read it again.
  *
  * A handler rejects an event by throwing. That stops the run at that event and
  * leaves the position before it, so the next run starts there and tries again.
