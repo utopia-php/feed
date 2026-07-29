@@ -41,6 +41,8 @@ class Redis extends Journal
         protected readonly int $maxSize = 100_000,
     ) {
         parent::__construct($name);
+
+        self::assertRetention($maxSize);
     }
 
     /**

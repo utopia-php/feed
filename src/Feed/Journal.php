@@ -87,6 +87,26 @@ abstract class Journal
     }
 
     /**
+     * Guard a retention cap.
+     *
+     * Non-positive values do not mean "no retention" — they mean something
+     * different on every backend, and nothing useful on any. Redis reads
+     * `MAXLEN 0` as "trim everything", so a feed would accept appends and
+     * retain none of them; `array_slice($events, -0)` is `array_slice($events,
+     * 0)`, so the in-memory journal would do the exact opposite and retain the
+     * lot, unbounded. A cap that silently means one thing here and the reverse
+     * there is worse than no cap, so it is rejected at construction.
+     *
+     * @throws Invalid When $maxSize would retain fewer than one event.
+     */
+    protected static function assertRetention(int $maxSize): void
+    {
+        if ($maxSize < 1) {
+            throw new Invalid("Feed retention must be at least one event, got {$maxSize}");
+        }
+    }
+
+    /**
      * The backend fields an event is stored as.
      *
      * `data` and `extensions` are JSON so they can hold what CloudEvents lets

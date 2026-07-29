@@ -36,6 +36,8 @@ class Memory extends Journal
     public function __construct(string $name, protected readonly int $maxSize = 100_000)
     {
         parent::__construct($name);
+
+        self::assertRetention($maxSize);
     }
 
     public function append(CloudEvent $event): string

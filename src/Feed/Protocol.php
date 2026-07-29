@@ -163,7 +163,18 @@ final class Protocol
             throw new Invalid('Expected a feed batch, got ' . \get_debug_type($payload));
         }
 
-        $raw = $payload[self::KEY_EVENTS] ?? [];
+        // Required, not defaulted to empty. An empty batch and a response that
+        // is not a batch at all are the same bytes to a consumer that defaults
+        // it — and they mean opposite things: "you are caught up" versus "you
+        // did not reach the feed". A misrouted request, a proxy's JSON error
+        // page or an endpoint that moved would all read as a quiet, permanent
+        // caught-up state, which is the one failure a feed cannot afford to
+        // hide.
+        if (!\array_key_exists(self::KEY_EVENTS, $payload)) {
+            throw new Invalid('Feed batch is missing the "' . self::KEY_EVENTS . '" field');
+        }
+
+        $raw = $payload[self::KEY_EVENTS];
         if (!\is_array($raw)) {
             throw new Invalid('Feed batch has a malformed "' . self::KEY_EVENTS . '" field');
         }

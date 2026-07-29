@@ -371,6 +371,45 @@ class FeedTest extends TestCase
         new Memory('');
     }
 
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function unusableRetention(): array
+    {
+        return [
+            'zero' => [0],
+            'negative' => [-5],
+        ];
+    }
+
+    /**
+     * A non-positive cap means the opposite thing on each backend — Redis reads
+     * `MAXLEN 0` as "keep nothing", while `array_slice($events, -0)` keeps
+     * everything — so it is refused rather than silently honoured one way here
+     * and the other way in production.
+     *
+     * @dataProvider unusableRetention
+     */
+    public function testRejectsARetentionCapThatWouldNotBoundTheFeed(int $maxSize): void
+    {
+        $this->expectException(Invalid::class);
+
+        new Memory('edge', maxSize: $maxSize);
+    }
+
+    public function testAcceptsTheSmallestUsefulRetentionCap(): void
+    {
+        $feed = new Feed(new Memory('edge', maxSize: 1));
+
+        $feed->append('a');
+        $feed->append('b');
+
+        $events = $feed->read();
+
+        $this->assertCount(1, $events);
+        $this->assertSame('b', $events[0]->type);
+    }
+
     public function testFlushingMemoryDoesNotReissuePositions(): void
     {
         $before = $this->feed->append('a');

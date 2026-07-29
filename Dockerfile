@@ -14,7 +14,7 @@ COPY composer.lock composer.json /src/
 RUN composer install --ignore-platform-reqs --optimize-autoloader \
     --no-plugins --no-scripts --prefer-dist
 
-FROM appwrite/utopia-base:php-${PHP_VERSION}-1.0.0 AS final
+FROM appwrite/utopia-base:php-${PHP_VERSION}-2.1.0 AS final
 
 LABEL maintainer="team@appwrite.io"
 

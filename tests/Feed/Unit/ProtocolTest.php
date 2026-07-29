@@ -59,7 +59,35 @@ class ProtocolTest extends TestCase
     public function testDecodesAnEmptyBatch(): void
     {
         $this->assertSame([], Protocol::decode(['total' => 0, 'events' => []]));
-        $this->assertSame([], Protocol::decode([]));
+    }
+
+    /**
+     * An empty batch means "you are caught up". A response with no `events`
+     * field at all means "you did not reach the feed" — a misrouted request, a
+     * proxy's JSON error page, an endpoint that moved. Defaulting the missing
+     * field would make those indistinguishable, and a consumer would sit
+     * quietly at a position that never advances again.
+     *
+     * @dataProvider notBatches
+     */
+    public function testARespondingEndpointThatIsNotAFeedIsNotMistakenForBeingCaughtUp(mixed $payload): void
+    {
+        $this->expectException(Invalid::class);
+
+        Protocol::decode($payload);
+    }
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function notBatches(): array
+    {
+        return [
+            'empty object' => [[]],
+            'total but no events' => [['total' => 0]],
+            'some other API' => [['data' => [], 'status' => 'ok']],
+            'an error body' => [['message' => 'Not found', 'code' => 404]],
+        ];
     }
 
     public function testRejectsAPayloadThatIsNotABatch(): void

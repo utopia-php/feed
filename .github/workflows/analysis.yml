@@ -9,7 +9,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Run against the test image rather than a bare composer container: the
       # Redis stream calls only resolve where ext-redis is actually installed.
