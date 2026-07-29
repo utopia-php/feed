@@ -7,8 +7,8 @@ namespace Utopia\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Utopia\Cache\Adapter\Memory as CacheMemory;
 use Utopia\Cache\Cache as UtopiaCache;
-use Utopia\Feed\Adapter\Http;
-use Utopia\Feed\Adapter\Memory as MemoryAdapter;
+use Utopia\Feed\Journal\Http;
+use Utopia\Feed\Journal\Memory as MemoryJournal;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
 use Utopia\CloudEvents\CloudEvent;
@@ -34,7 +34,7 @@ class RoundTripTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->producer = new Feed(new MemoryAdapter('edge'), 'urn:appwrite:cloud:fra');
+        $this->producer = new Feed(new MemoryJournal('edge'), 'urn:appwrite:cloud:fra');
         $this->server = new FeedServer($this->producer);
 
         $this->consumerFeed = new Feed(

@@ -15,7 +15,7 @@ use Utopia\Feed\Exception\Invalid;
  * where `seq` disambiguates events appended within the same millisecond.
  *
  * The format is part of the wire contract, not a Redis implementation detail:
- * an id produced by one adapter has to be a valid position for another, so
+ * an id produced by one journal has to be a valid position for another, so
  * that a feed can move between backends without invalidating the positions
  * consumers already hold.
  */

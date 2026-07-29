@@ -13,7 +13,7 @@ use Utopia\Psr7\Response;
 use Utopia\Psr7\Stream;
 
 /**
- * A client that answers from a script, for driving the HTTP feed adapter
+ * A client that answers from a script, for driving the HTTP feed journal
  * through responses a real producer would be awkward to provoke.
  */
 class FakeTransport extends FakeClient

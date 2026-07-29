@@ -13,7 +13,7 @@ This is what maps onto what.
 
 | Was | Now |
 | --- | --- |
-| `Feed::append()` / `read()` / `poll()` | `Feed`, on `Adapter\Pool` |
+| `Feed::append()` / `read()` / `poll()` | `Feed`, on `Journal\Pool` |
 | `Feed::after()` — stream id arithmetic | `Id::after()` |
 | `Feed::getCursor()` / `saveCursor()` | `Cursor\Pool` |
 | `Consumer::consume()` | `Consumer::consume()` |
@@ -39,7 +39,7 @@ class EdgeFeed extends Feed
     public function __construct(?Pool $pool, string $source, int $maxSize = 100_000)
     {
         parent::__construct(
-            $pool === null ? new None(self::NAME) : new Adapter\Pool($pool, self::NAME, $maxSize),
+            $pool === null ? new None(self::NAME) : new Journal\Pool($pool, self::NAME, $maxSize),
             $source,
         );
     }
@@ -61,7 +61,7 @@ class EdgeFeed extends Feed
 }
 ```
 
-The nullable pool becomes `Adapter\None`, which throws on use with the same
+The nullable pool becomes `Journal\None`, which throws on use with the same
 intent as the old `pool()` guard: a feed with no backend must fail loudly rather
 than drop events.
 
@@ -116,7 +116,7 @@ $domain = \is_array($tags) ? ($tags['domain'] ?? '') : '';
 | `Feed\Cursor` | `Cursor\Cache` |
 | `Feed\Event` | `Utopia\CloudEvents\CloudEvent` — this library has no event type of its own |
 | `Feed\Event::FEED` and the type constants | Stay — they name cloud's feed and its events |
-| `Manager::fetchFeed()` | `Adapter\Http`, over `utopia-php/client` |
+| `Manager::fetchFeed()` | `Journal\Http`, over `utopia-php/client` |
 | `Consumer::TIMEOUT_MARGIN` | `Protocol::TIMEOUT_MARGIN` |
 | `Feed\Poller` | Stays — Swoole interval scheduling |
 | `Router\Invalidator` | Stays — it purges edge caches |

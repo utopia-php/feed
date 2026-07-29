@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Adapter;
+namespace Utopia\Feed\Journal;
 
+use Utopia\Feed\Journal;
 use Psr\Http\Client\ClientExceptionInterface;
-use Utopia\Client\Adapter as ClientAdapter;
-use Utopia\Feed\Adapter;
+use Utopia\Client\Adapter;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Exception\Unsupported;
@@ -23,7 +23,7 @@ use Utopia\Psr7\Request\Factory as RequestFactory;
  * The counterpart to serving a feed with {@see Protocol}: a service points
  * this at another service's feed endpoint and consumes it with the same
  * {@see Feed} and {@see \Utopia\Feed\Consumer} it would use on a local one.
- * Nothing above the adapter knows the events are arriving over the network.
+ * Nothing above the journal knows the events are arriving over the network.
  *
  * Read-only, because a feed is owned by whoever appends to it. Long polling is
  * delegated to the producer, which is the point of doing it this way: the
@@ -43,12 +43,12 @@ use Utopia\Psr7\Request\Factory as RequestFactory;
  *
  * @see https://github.com/utopia-php/client
  */
-class Http extends Adapter
+class Http extends Journal
 {
     private readonly RequestFactory $requests;
 
     /**
-     * @param ClientAdapter $client Configured with whatever credentials the
+     * @param Adapter $client Configured with whatever credentials the
      *        producer requires. Typed as the client's own adapter interface
      *        rather than plain PSR-18, because a read needs to set its own
      *        deadline — which also means a `Retry` or `Pool` decorator can be
@@ -64,7 +64,7 @@ class Http extends Adapter
      * @param string $name Feed name, as the producer knows it.
      */
     public function __construct(
-        protected readonly ClientAdapter $client,
+        protected readonly Adapter $client,
         protected readonly string $endpoint,
         string $name,
         ?RequestFactory $requests = null,
@@ -75,7 +75,7 @@ class Http extends Adapter
     }
 
     /**
-     * The URL this adapter reads.
+     * The URL this journal reads.
      */
     public function getUrl(): string
     {
@@ -151,7 +151,7 @@ class Http extends Adapter
      * surfaces as a transport failure on every quiet tick — burying the
      * failures that matter. A plain read keeps whatever the caller configured.
      */
-    private function client(int $timeout): ClientAdapter
+    private function client(int $timeout): Adapter
     {
         if ($timeout <= 0) {
             return $this->client;

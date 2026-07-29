@@ -10,7 +10,7 @@ use Utopia\Pools\Pool as UtopiaPool;
 /**
  * {@see Redis}, over a pooled connection.
  *
- * Pairs with {@see \Utopia\Feed\Adapter\Pool}, and can share its pool: a
+ * Pairs with {@see \Utopia\Feed\Journal\Pool}, and can share its pool: a
  * cursor read is one `GET`, so it borrows a connection only for as long as
  * that takes.
  *

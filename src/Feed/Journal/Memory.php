@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Adapter;
+namespace Utopia\Feed\Journal;
 
-use Utopia\Feed\Adapter;
+use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Id;
 
@@ -19,7 +19,7 @@ use Utopia\Feed\Id;
  * Not for production: nothing is shared between processes and nothing survives
  * a restart, so consumers in another worker see an empty feed.
  */
-class Memory extends Adapter
+class Memory extends Journal
 {
     /** @var list<CloudEvent> */
     private array $events = [];
@@ -55,7 +55,7 @@ class Memory extends Adapter
         $id = Id::encode($this->timestamp, $this->sequence);
 
         // Stored through the same encode/decode a real backend goes through,
-        // rather than holding the object. Otherwise this adapter would accept
+        // rather than holding the object. Otherwise this journal would accept
         // payloads that cannot be serialized and hand back values that survived
         // a round trip they would not survive in production — which is the one
         // way a stand-in like this actively causes harm.
@@ -71,7 +71,7 @@ class Memory extends Adapter
     public function read(?string $lastEventId, int $limit, int $timeout = 0): array
     {
         // Validates the position even when nothing will be returned, so a
-        // malformed cursor fails the same way it does on every other adapter
+        // malformed cursor fails the same way it does on every other journal
         // instead of only once the feed has events in it.
         $after = $lastEventId === null ? null : Id::decode($lastEventId);
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Utopia\Feed\Adapter\Memory;
-use Utopia\Feed\Adapter\None;
+use Utopia\Feed\Journal\Memory;
+use Utopia\Feed\Journal\None;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
@@ -15,14 +15,14 @@ use Utopia\Feed\Id;
 
 class FeedTest extends TestCase
 {
-    private Memory $adapter;
+    private Memory $journal;
 
     private Feed $feed;
 
     protected function setUp(): void
     {
-        $this->adapter = new Memory('edge');
-        $this->feed = new Feed($this->adapter, 'urn:appwrite:cloud:fra');
+        $this->journal = new Memory('edge');
+        $this->feed = new Feed($this->journal, 'urn:appwrite:cloud:fra');
     }
 
     public function testAppendReturnsAPosition(): void
@@ -60,10 +60,10 @@ class FeedTest extends TestCase
      */
     public function testKeepsTheSourceOfTheProducerThatAppended(): void
     {
-        (new Feed($this->adapter, 'urn:appwrite:cloud:fra'))->append('test');
-        (new Feed($this->adapter, 'urn:appwrite:cloud:nyc'))->append('test');
+        (new Feed($this->journal, 'urn:appwrite:cloud:fra'))->append('test');
+        (new Feed($this->journal, 'urn:appwrite:cloud:nyc'))->append('test');
 
-        $events = (new Feed($this->adapter, 'urn:appwrite:cloud:syd'))->read();
+        $events = (new Feed($this->journal, 'urn:appwrite:cloud:syd'))->read();
 
         $this->assertSame('urn:appwrite:cloud:fra', $events[0]->source);
         $this->assertSame('urn:appwrite:cloud:nyc', $events[1]->source);
@@ -309,13 +309,13 @@ class FeedTest extends TestCase
      */
     public function testAPositionBelowTheTrimHorizonReadsWhatIsLeft(): void
     {
-        $feed = new Feed($adapter = new Memory('small', maxSize: 2));
+        $feed = new Feed($journal = new Memory('small', maxSize: 2));
 
         $first = $feed->append('a');
         $feed->append('b');
         $feed->append('c');
 
-        $this->assertSame(2, $adapter->count());
+        $this->assertSame(2, $journal->count());
         $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read($first)));
     }
 
@@ -323,7 +323,7 @@ class FeedTest extends TestCase
     {
         $this->assertSame('edge', $this->feed->getName());
         $this->assertSame('urn:appwrite:cloud:fra', $this->feed->getSource());
-        $this->assertSame($this->adapter, $this->feed->getAdapter());
+        $this->assertSame($this->journal, $this->feed->getJournal());
     }
 
     public function testAnUnconfiguredBackendFailsLoudlyRatherThanDroppingEvents(): void
@@ -354,7 +354,7 @@ class FeedTest extends TestCase
     public function testFlushingMemoryDoesNotReissuePositions(): void
     {
         $before = $this->feed->append('a');
-        $this->adapter->flush();
+        $this->journal->flush();
         $after = $this->feed->append('b');
 
         $this->assertSame(1, Id::compare($after, $before), 'A reissued position would make a consumer skip events');

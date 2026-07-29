@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Utopia\Feed\Adapter\Memory as MemoryAdapter;
+use Utopia\Feed\Journal\Memory as MemoryJournal;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
@@ -16,7 +16,7 @@ use Utopia\Tests\Unit\Support\FailingCursor;
 
 class ConsumerTest extends TestCase
 {
-    private MemoryAdapter $adapter;
+    private MemoryJournal $journal;
 
     private Feed $feed;
 
@@ -24,8 +24,8 @@ class ConsumerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->adapter = new MemoryAdapter('edge');
-        $this->feed = new Feed($this->adapter, 'urn:test');
+        $this->journal = new MemoryJournal('edge');
+        $this->feed = new Feed($this->journal, 'urn:test');
         $this->cursor = new MemoryCursor('edge');
     }
 
@@ -310,7 +310,7 @@ class ConsumerTest extends TestCase
         $this->feed->append('b');
         $this->cursor->save('invalidator', $first);
 
-        $consumer = new Consumer(new Feed(new \Utopia\Feed\Adapter\None('edge')), 'invalidator', $this->cursor);
+        $consumer = new Consumer(new Feed(new \Utopia\Feed\Journal\None('edge')), 'invalidator', $this->cursor);
 
         $this->expectException(\Utopia\Feed\Exception\Unsupported::class);
 

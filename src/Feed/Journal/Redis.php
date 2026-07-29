@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Adapter;
+namespace Utopia\Feed\Journal;
 
-use Utopia\Feed\Adapter;
+use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Id;
@@ -24,7 +24,7 @@ use Utopia\Feed\Id;
  * bound on memory, not a promise about how far back a consumer can resume
  * from.
  */
-class Redis extends Adapter
+class Redis extends Journal
 {
     /**
      * @param \Redis|\RedisCluster $redis

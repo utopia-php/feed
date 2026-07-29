@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Adapter;
+namespace Utopia\Feed\Journal;
 
-use Utopia\Feed\Adapter;
+use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Pools\Pool as UtopiaPool;
 
@@ -17,7 +17,7 @@ use Utopia\Pools\Pool as UtopiaPool;
  *
  * @see https://github.com/utopia-php/pools
  */
-class Pool extends Adapter
+class Pool extends Journal
 {
     /**
      * @param UtopiaPool<\Redis|\RedisCluster> $pool
@@ -34,22 +34,22 @@ class Pool extends Adapter
 
     public function append(CloudEvent $event): string
     {
-        return $this->pool->use(fn (\Redis|\RedisCluster $redis): string => $this->adapter($redis)->append($event));
+        return $this->pool->use(fn (\Redis|\RedisCluster $redis): string => $this->journal($redis)->append($event));
     }
 
     public function read(?string $lastEventId, int $limit, int $timeout = 0): array
     {
         return $this->pool->use(
-            fn (\Redis|\RedisCluster $redis): array => $this->adapter($redis)->read($lastEventId, $limit, $timeout)
+            fn (\Redis|\RedisCluster $redis): array => $this->journal($redis)->read($lastEventId, $limit, $timeout)
         );
     }
 
     /**
      * The connection is only borrowed for the length of one call, so the
-     * adapter wrapping it is built per call too. It holds no state beyond the
+     * journal wrapping it is built per call too. It holds no state beyond the
      * connection, which makes that free.
      */
-    private function adapter(\Redis|\RedisCluster $redis): Redis
+    private function journal(\Redis|\RedisCluster $redis): Redis
     {
         return new Redis($redis, $this->name, $this->maxSize);
     }

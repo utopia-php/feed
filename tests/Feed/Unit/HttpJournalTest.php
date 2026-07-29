@@ -7,7 +7,7 @@ namespace Utopia\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Utopia\Client;
-use Utopia\Feed\Adapter\Http;
+use Utopia\Feed\Journal\Http;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
 use Utopia\CloudEvents\CloudEvent;
@@ -18,7 +18,7 @@ use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
 use Utopia\Tests\Unit\Support\FakeTransport;
 
-class HttpAdapterTest extends TestCase
+class HttpJournalTest extends TestCase
 {
     /**
      * @param list<ResponseInterface|\Throwable> $responses
@@ -27,9 +27,9 @@ class HttpAdapterTest extends TestCase
     private function feed(array $responses = []): array
     {
         $transport = FakeTransport::of($responses);
-        $adapter = new Http($transport, 'https://cloud.example.com/v1/feeds', 'edge');
+        $journal = new Http($transport, 'https://cloud.example.com/v1/feeds', 'edge');
 
-        return [new Feed($adapter), $transport];
+        return [new Feed($journal), $transport];
     }
 
     public function testReadsAFeedOverHttp(): void
@@ -57,9 +57,9 @@ class HttpAdapterTest extends TestCase
 
     public function testEncodesAFeedNameThatNeedsIt(): void
     {
-        $adapter = new Http(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds/', 'a b/c');
+        $journal = new Http(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds/', 'a b/c');
 
-        $this->assertSame('https://cloud.example.com/v1/feeds/a%20b%2Fc', $adapter->getUrl());
+        $this->assertSame('https://cloud.example.com/v1/feeds/a%20b%2Fc', $journal->getUrl());
     }
 
     public function testReadsWithGet(): void
@@ -173,7 +173,7 @@ class HttpAdapterTest extends TestCase
     }
 
     /**
-     * PSR-18 returns 4xx and 5xx rather than throwing, so the adapter has to
+     * PSR-18 returns 4xx and 5xx rather than throwing, so the journal has to
      * check the status itself — a producer error must not read as an empty
      * batch, which the consumer would take for "caught up".
      */
@@ -242,7 +242,7 @@ class HttpAdapterTest extends TestCase
     }
 
     /**
-     * The point of the adapter: a remote feed is consumed with exactly the
+     * The point of this journal: a remote feed is consumed with exactly the
      * code a local one is.
      */
     public function testConsumesARemoteFeedThroughTheSameConsumer(): void

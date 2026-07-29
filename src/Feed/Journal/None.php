@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Adapter;
+namespace Utopia\Feed\Journal;
 
-use Utopia\Feed\Adapter;
+use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Unsupported;
 
@@ -20,7 +20,7 @@ use Utopia\Feed\Exception\Unsupported;
  * later somewhere else — a cache that never invalidates, a replica that never
  * catches up. If dropping events is genuinely acceptable, use {@see Memory}.
  */
-class None extends Adapter
+class None extends Journal
 {
     public function __construct(string $name = 'none')
     {

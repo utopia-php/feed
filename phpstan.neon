@@ -13,7 +13,7 @@ parameters:
     ignoreErrors:
         -
             message: '#Call to an undefined method Redis\|RedisCluster::(xAdd|xRange)\(\)#'
-            path: src/Feed/Adapter/Redis.php
+            path: src/Feed/Journal/Redis.php
         -
             message: '#Call to an undefined method Redis::(xAdd|xRange|xLen)\(\)#'
             path: tests/Feed/E2E/RedisTest.php

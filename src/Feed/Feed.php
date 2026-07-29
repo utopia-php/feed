@@ -63,7 +63,7 @@ class Feed
     protected const int POLL_INTERVAL = 500_000;
 
     /**
-     * @param Adapter $adapter Where the events live.
+     * @param Journal $journal Where the events live.
      * @param string $source Who is producing them, as a URI reference
      *        (`urn:appwrite:cloud:fra`). Stamped onto every event this
      *        instance appends, so a consumer merging feeds from several
@@ -71,19 +71,19 @@ class Feed
      *        the feed is only being read.
      */
     public function __construct(
-        protected readonly Adapter $adapter,
+        protected readonly Journal $journal,
         protected readonly string $source = '',
     ) {
     }
 
-    public function getAdapter(): Adapter
+    public function getJournal(): Journal
     {
-        return $this->adapter;
+        return $this->journal;
     }
 
     public function getName(): string
     {
-        return $this->adapter->getName();
+        return $this->journal->getName();
     }
 
     public function getSource(): string
@@ -139,7 +139,7 @@ class Feed
         // Stamped with the withers rather than rebuilt, so anything this
         // library does not model itself — a dataschema, an extension attribute
         // such as a traceparent — survives the append untouched.
-        return $this->adapter->append(
+        return $this->journal->append(
             $event
                 ->withSource($this->source)
                 ->withTime($event->time !== '' ? $event->time : null)
@@ -158,7 +158,7 @@ class Feed
      */
     public function read(?string $lastEventId = null, int $limit = self::MAX_BATCH): array
     {
-        return $this->adapter->read($lastEventId, self::limit($limit));
+        return $this->journal->read($lastEventId, self::limit($limit));
     }
 
     /**
@@ -187,14 +187,14 @@ class Feed
         $limit = self::limit($limit);
         $timeout = \max(0, \min($timeout, self::MAX_TIMEOUT));
 
-        if ($this->adapter->pollable()) {
-            return $this->adapter->read($lastEventId, $limit, $timeout);
+        if ($this->journal->pollable()) {
+            return $this->journal->read($lastEventId, $limit, $timeout);
         }
 
         $deadline = \microtime(true) + $timeout / 1000;
 
         while (true) {
-            $events = $this->adapter->read($lastEventId, $limit);
+            $events = $this->journal->read($lastEventId, $limit);
 
             if ($events !== [] || \microtime(true) >= $deadline) {
                 return $events;

@@ -49,7 +49,7 @@ on — a cache tag to drop, a record to refresh, a config to reload.
 
 - **Ordered, resumable log** — consumers page by event id, and hold their own position
 - **CloudEvents** — events *are* [`utopia-php/cloudevents`](https://github.com/utopia-php/cloudevents) events, as http-feeds requires
-- **Adapters** — Redis streams, a pooled Redis, in-memory, or another service's feed over HTTP
+- **Journals** — Redis streams, a pooled Redis, in-memory, or another service's feed over HTTP
 - **Long polling** — subscribe in near real time without hammering the producer
 - **Cursors** — positions in a Utopia cache, in Redis, or in memory
 - **Consumer** — the pull loop, the position bookkeeping and the at-least-once semantics, written once
@@ -65,14 +65,14 @@ composer require utopia-php/feed
 ### Producing
 
 ```php
-use Utopia\Feed\Adapter\Redis as RedisAdapter;
+use Utopia\Feed\Journal\Redis as RedisJournal;
 use Utopia\Feed\Feed;
 
 $redis = new Redis();
 $redis->connect('redis', 6379);
 
 $feed = new Feed(
-    new RedisAdapter($redis, 'edge'),
+    new RedisJournal($redis, 'edge'),
     source: 'urn:appwrite:cloud:fra',
 );
 
@@ -160,12 +160,12 @@ $handled = $consumer->consume(function (CloudEvent $event) use ($router) {
 });
 ```
 
-Consuming **another service's** feed is the same code with a different adapter:
+Consuming **another service's** feed is the same code with a different journal:
 
 ```php
 use Utopia\Client;
 use Utopia\Client\Adapter\Curl\Client as Curl;
-use Utopia\Feed\Adapter\Http;
+use Utopia\Feed\Journal\Http;
 
 $client = (new Client(new Curl()))
     ->withHeaders(['x-appwrite-jwt' => $token])
@@ -174,7 +174,7 @@ $client = (new Client(new Curl()))
 $feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
 ```
 
-Nothing above the adapter knows the events are arriving over the network,
+Nothing above the journal knows the events are arriving over the network,
 including the long polling — `Http` hands the wait to the producer, so a poll is
 one held request rather than a client-side loop.
 
@@ -195,24 +195,32 @@ while (true) {
 }
 ```
 
-## Adapters
+## Journals
 
-| Adapter | Use for | Append | Read |
+A journal is where a feed's events actually live. The name is the one event
+sourcing has long used for an append-only, strictly ordered record that is
+replayed rather than mutated — Akka Persistence calls its pluggable storage
+backends journals for the same reason. It is responsible for exactly two things:
+assigning an ordered id on append, and returning the events strictly after a
+given id. Everything else — long polling, cursors, the pull loop — sits above it
+and is the same whichever journal is underneath.
+
+| Journal | Use for | Append | Read |
 | --- | --- | --- | --- |
-| `Adapter\Redis` | Producing a feed on a Redis stream | ✅ | ✅ |
-| `Adapter\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ | ✅ |
-| `Adapter\Http` | Consuming another service's feed, over [utopia-php/client](https://github.com/utopia-php/client) | ❌ | ✅ |
-| `Adapter\Memory` | Tests, and single-process development | ✅ | ✅ |
-| `Adapter\None` | No backend configured | ❌ | ❌ |
+| `Journal\Redis` | Producing a feed on a Redis stream | ✅ | ✅ |
+| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ | ✅ |
+| `Journal\Http` | Consuming another service's feed, over [utopia-php/client](https://github.com/utopia-php/client) | ❌ | ✅ |
+| `Journal\Memory` | Tests, and single-process development | ✅ | ✅ |
+| `Journal\None` | No backend configured | ❌ | ❌ |
 
-`Adapter\Pool` is what most services producing a feed want: a long poll holds
+`Journal\Pool` is what most services producing a feed want: a long poll holds
 its connection for the whole timeout, so reading through a shared client would
 block every other user of it.
 
-`Adapter\None` throws on every operation rather than doing nothing, so a
+`Journal\None` throws on every operation rather than doing nothing, so a
 misconfigured service fails at the point of use instead of silently dropping
-events — which only shows up much later, somewhere else. `Adapter\Memory`
-implements the same id and retention semantics as `Adapter\Redis`, including the
+events — which only shows up much later, somewhere else. `Journal\Memory`
+implements the same id and retention semantics as `Journal\Redis`, including the
 awkward parts like resuming from a trimmed position, so code tested against it
 behaves the same when it is swapped out.
 

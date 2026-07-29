@@ -15,11 +15,11 @@ library.
   `CloudEvent` objects — this library defines no event type of its own, so a feed
   event is accepted anywhere a `CloudEvent` is, and `dataschema` and extension
   attributes survive an append and a read
-- `Adapter\Redis`, `Adapter\Pool` — Redis streams, directly or over a pool
-- `Adapter\Http` — another service's feed, read over the wire with
+- `Journal\Redis`, `Journal\Pool` — Redis streams, directly or over a pool
+- `Journal\Http` — another service's feed, read over the wire with
   [utopia-php/client](https://github.com/utopia-php/client); takes any of its
   adapters, so a pooled or Swoole coroutine transport drops straight in
-- `Adapter\Memory`, `Adapter\None` — for tests, and for no backend configured
+- `Journal\Memory`, `Journal\None` — for tests, and for no backend configured
 - `Consumer` — the pull loop, with at-least-once semantics and a durable position
 - `Cursor\Cache`, `Cursor\Redis`, `Cursor\Pool`, `Cursor\Memory` — where that position lives
 - `Protocol` — the http-feeds wire contract, shared by producer and consumer, and

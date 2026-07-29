@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Tests\E2E;
 
 use PHPUnit\Framework\TestCase;
-use Utopia\Feed\Adapter\Redis as RedisAdapter;
+use Utopia\Feed\Journal\Redis as RedisJournal;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Redis as RedisCursor;
 use Utopia\CloudEvents\CloudEvent;
@@ -49,7 +49,7 @@ class RedisTest extends TestCase
 
     private function feed(int $maxSize = 100_000): Feed
     {
-        return new Feed(new RedisAdapter($this->redis, $this->name, $maxSize), 'urn:test:e2e');
+        return new Feed(new RedisJournal($this->redis, $this->name, $maxSize), 'urn:test:e2e');
     }
 
     public function testAppendsAndReadsBack(): void

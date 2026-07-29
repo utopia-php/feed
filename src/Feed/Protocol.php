@@ -13,7 +13,7 @@ use Utopia\Feed\Exception\Invalid;
  *
  * A producer serving a feed and a consumer reading one have to agree on the
  * query parameters, the response body and the caching rules. Both halves live
- * here so they cannot drift: {@see Adapter\Http} reads through it, and a
+ * here so they cannot drift: {@see Journal\Http} reads through it, and a
  * producer builds its endpoint's response with it — whichever HTTP framework
  * that endpoint happens to be written in, which is why this deals in arrays
  * rather than in requests and responses.

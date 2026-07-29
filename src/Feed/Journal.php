@@ -11,18 +11,22 @@ use Utopia\Feed\Exception\Invalid;
 /**
  * Where a feed's events actually live.
  *
- * An adapter is responsible for two things and nothing else: assigning an
+ * Named for what event sourcing has long called an append-only, strictly
+ * ordered record that is replayed rather than mutated — the same sense in which
+ * Akka Persistence calls its pluggable storage backends journals.
+ *
+ * A journal is responsible for two things and nothing else: assigning an
  * ordered id on append, and returning the events strictly after a given id.
  * Everything above that — long polling on backends that cannot do it
  * themselves, cursors, the pull loop — is the same regardless of the backend
  * and lives in {@see Feed} and {@see Consumer}.
  *
- * Adapters split into producers (Redis, Pool, Memory), which own the events,
- * and consumers ({@see Adapter\Http}), which read someone else's feed over the
+ * Journals split into producers (Redis, Pool, Memory), which own the events,
+ * and consumers ({@see Journal\Http}), which read someone else's feed over the
  * wire. The read side is identical either way, which is what lets a service
  * consume a remote feed with the same code it uses on a local one.
  */
-abstract class Adapter
+abstract class Journal
 {
     /**
      * @param string $name Feed identifier. Also the key the backend stores it
@@ -63,7 +67,7 @@ abstract class Adapter
      *
      * @param int $timeout Milliseconds to wait for an event before giving up,
      *        honoured only when {@see pollable()} is true; {@see Feed::poll()}
-     *        handles the wait for every other adapter.
+     *        handles the wait for every other journal.
      * @return list<CloudEvent>
      * @throws Invalid When $lastEventId is not a feed position.
      * @throws Exception When the backend cannot be read.
@@ -74,7 +78,7 @@ abstract class Adapter
      * Whether the backend blocks until an event arrives on its own.
      *
      * False here rather than abstract because polling in a loop works against
-     * anything; an adapter only overrides it when the backend can do better,
+     * anything; a journal only overrides it when the backend can do better,
      * and {@see Feed::poll()} then hands the wait over instead of sleeping.
      */
     public function pollable(): bool
