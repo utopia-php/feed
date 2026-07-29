@@ -20,8 +20,8 @@ class CursorTest extends TestCase
     public static function stores(): array
     {
         return [
-            'memory' => [new Memory('edge')],
-            'cache' => [new Cache(new UtopiaCache(new CacheMemory()), 'edge')],
+            'memory' => [new Memory()],
+            'cache' => [new Cache(new UtopiaCache(new CacheMemory()))],
         ];
     }
 
@@ -30,7 +30,7 @@ class CursorTest extends TestCase
      */
     public function testAnUnknownConsumerHasNoPosition(Cursor $cursor): void
     {
-        $this->assertNull($cursor->load('never-run'));
+        $this->assertNull($cursor->load('edge', 'never-run'));
     }
 
     /**
@@ -38,9 +38,9 @@ class CursorTest extends TestCase
      */
     public function testRoundTripsAPosition(Cursor $cursor): void
     {
-        $cursor->save('invalidator', '1690000000000-0');
+        $cursor->save('edge', 'invalidator', '1690000000000-0');
 
-        $this->assertSame('1690000000000-0', $cursor->load('invalidator'));
+        $this->assertSame('1690000000000-0', $cursor->load('edge', 'invalidator'));
     }
 
     /**
@@ -48,10 +48,10 @@ class CursorTest extends TestCase
      */
     public function testOverwritesAPosition(Cursor $cursor): void
     {
-        $cursor->save('invalidator', '1-0');
-        $cursor->save('invalidator', '2-0');
+        $cursor->save('edge', 'invalidator', '1-0');
+        $cursor->save('edge', 'invalidator', '2-0');
 
-        $this->assertSame('2-0', $cursor->load('invalidator'));
+        $this->assertSame('2-0', $cursor->load('edge', 'invalidator'));
     }
 
     /**
@@ -59,11 +59,24 @@ class CursorTest extends TestCase
      */
     public function testConsumersDoNotShareAPosition(Cursor $cursor): void
     {
-        $cursor->save('one', '1-0');
-        $cursor->save('two', '2-0');
+        $cursor->save('edge', 'one', '1-0');
+        $cursor->save('edge', 'two', '2-0');
 
-        $this->assertSame('1-0', $cursor->load('one'));
-        $this->assertSame('2-0', $cursor->load('two'));
+        $this->assertSame('1-0', $cursor->load('edge', 'one'));
+        $this->assertSame('2-0', $cursor->load('edge', 'two'));
+    }
+
+    /**
+     * One store serves every feed a service consumes, which is why the feed
+     * name is part of the key rather than of the cursor.
+     *
+     * @dataProvider stores
+     */
+    public function testFeedsDoNotShareAPosition(Cursor $cursor): void
+    {
+        $cursor->save('edge', 'invalidator', '1-0');
+
+        $this->assertNull($cursor->load('other', 'invalidator'));
     }
 
     /**
@@ -71,10 +84,10 @@ class CursorTest extends TestCase
      */
     public function testResetForgetsAPosition(Cursor $cursor): void
     {
-        $cursor->save('invalidator', '1-0');
-        $cursor->reset('invalidator');
+        $cursor->save('edge', 'invalidator', '1-0');
+        $cursor->reset('edge', 'invalidator');
 
-        $this->assertNull($cursor->load('invalidator'));
+        $this->assertNull($cursor->load('edge', 'invalidator'));
     }
 
     /**
@@ -82,10 +95,10 @@ class CursorTest extends TestCase
      */
     public function testSavingAnEmptyPositionIsIgnored(Cursor $cursor): void
     {
-        $cursor->save('invalidator', '1-0');
-        $cursor->save('invalidator', '');
+        $cursor->save('edge', 'invalidator', '1-0');
+        $cursor->save('edge', 'invalidator', '');
 
-        $this->assertSame('1-0', $cursor->load('invalidator'), 'An empty position must not erase a real one');
+        $this->assertSame('1-0', $cursor->load('edge', 'invalidator'), 'An empty position must not erase a real one');
     }
 
     /**
@@ -95,37 +108,16 @@ class CursorTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        $cursor->load('');
+        $cursor->load('edge', '');
     }
 
     /**
      * @dataProvider stores
      */
-    public function testRejectsAnEmptyConsumerNameOnSave(Cursor $cursor): void
+    public function testRejectsAnEmptyFeedName(Cursor $cursor): void
     {
         $this->expectException(Invalid::class);
 
-        $cursor->save('', '1-0');
-    }
-
-    public function testFeedsDoNotShareAPosition(): void
-    {
-        $cache = new UtopiaCache(new CacheMemory());
-
-        (new Cache($cache, 'edge'))->save('invalidator', '1-0');
-
-        $this->assertNull((new Cache($cache, 'other'))->load('invalidator'));
-    }
-
-    public function testRejectsAnEmptyFeedName(): void
-    {
-        $this->expectException(Invalid::class);
-
-        new Memory('');
-    }
-
-    public function testExposesTheFeedItTracks(): void
-    {
-        $this->assertSame('edge', (new Memory('edge'))->getFeed());
+        $cursor->save('', 'invalidator', '1-0');
     }
 }

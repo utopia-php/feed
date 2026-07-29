@@ -57,9 +57,14 @@ class HttpJournalTest extends TestCase
 
     public function testEncodesAFeedNameThatNeedsIt(): void
     {
-        $journal = new Http(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds/', 'a b/c');
+        $transport = FakeTransport::of([]);
 
-        $this->assertSame('https://cloud.example.com/v1/feeds/a%20b%2Fc', $journal->getUrl());
+        (new Feed(new Http($transport, 'https://cloud.example.com/v1/feeds/', 'a b/c')))->read();
+
+        $this->assertStringStartsWith(
+            'https://cloud.example.com/v1/feeds/a%20b%2Fc',
+            $transport->recorder->last()['uri'],
+        );
     }
 
     public function testReadsWithGet(): void
@@ -216,7 +221,8 @@ class HttpJournalTest extends TestCase
 
     public function testCannotAppendToAFeedItDoesNotOwn(): void
     {
-        [$feed] = $this->feed();
+        $journal = new Http(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds', 'edge');
+        $feed = new Feed($journal, 'urn:appwrite:edge:fra');
 
         $this->expectException(Unsupported::class);
 
@@ -256,7 +262,7 @@ class HttpJournalTest extends TestCase
             FakeTransport::json(Protocol::encode([])),
         ]);
 
-        $cursor = new MemoryCursor('edge');
+        $cursor = new MemoryCursor();
         $consumer = new Consumer($feed, 'invalidator', $cursor);
 
         $seen = [];
@@ -265,7 +271,7 @@ class HttpJournalTest extends TestCase
         };
 
         $this->assertSame(2, $consumer->consume($handler));
-        $this->assertSame('1-1', $cursor->load('invalidator'));
+        $this->assertSame('1-1', $cursor->load('edge', 'invalidator'));
 
         $this->assertSame(1, $consumer->consume($handler));
         $this->assertSame(0, $consumer->consume($handler));

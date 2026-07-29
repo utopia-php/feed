@@ -41,7 +41,7 @@ class RoundTripTest extends TestCase
             new Http($this->server, 'https://cloud.example.com/v1/feeds', 'edge')
         );
 
-        $this->cursor = new CacheCursor(new UtopiaCache(new CacheMemory()), 'edge');
+        $this->cursor = new CacheCursor(new UtopiaCache(new CacheMemory()));
     }
 
     private function consumer(string $name = 'invalidator', int $batch = Consumer::BATCH): Consumer

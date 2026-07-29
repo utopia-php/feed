@@ -33,7 +33,7 @@ class FeedServer extends FakeClient
         \parse_str($request->getUri()->getQuery(), $query);
 
         $lastEventId = $query[Protocol::PARAM_LAST_EVENT_ID] ?? null;
-        $limit = (int) ($query[Protocol::PARAM_LIMIT] ?? Feed::MAX_BATCH);
+        $limit = Feed::limit((int) ($query[Protocol::PARAM_LIMIT] ?? Feed::MAX_BATCH));
         $timeout = (int) ($query[Protocol::PARAM_TIMEOUT] ?? 0);
 
         $events = $this->feed->poll(

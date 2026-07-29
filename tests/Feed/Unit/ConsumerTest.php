@@ -26,7 +26,7 @@ class ConsumerTest extends TestCase
     {
         $this->journal = new MemoryJournal('edge');
         $this->feed = new Feed($this->journal, 'urn:test');
-        $this->cursor = new MemoryCursor('edge');
+        $this->cursor = new MemoryCursor();
     }
 
     private function consumer(?Cursor $cursor = null, int $batch = Consumer::BATCH): Consumer
@@ -57,7 +57,7 @@ class ConsumerTest extends TestCase
 
         $this->assertSame(['a', 'b'], $this->drain($consumer, $count));
         $this->assertSame(2, $count);
-        $this->assertSame($last, $this->cursor->load('invalidator'));
+        $this->assertSame($last, $this->cursor->load('edge', 'invalidator'));
         $this->assertSame($last, $consumer->position());
     }
 
@@ -76,7 +76,7 @@ class ConsumerTest extends TestCase
         $first = $this->feed->append('a');
         $this->feed->append('b');
 
-        $this->cursor->save('invalidator', $first);
+        $this->cursor->save('edge', 'invalidator', $first);
 
         $this->assertSame(['b'], $this->drain($this->consumer()));
     }
@@ -98,14 +98,14 @@ class ConsumerTest extends TestCase
     {
         $this->feed->append('a');
 
-        $cursor = new class ('edge') extends MemoryCursor {
+        $cursor = new class () extends MemoryCursor {
             public int $loads = 0;
 
-            public function load(string $consumer): ?string
+            public function load(string $feed, string $consumer): ?string
             {
                 $this->loads++;
 
-                return parent::load($consumer);
+                return parent::load($feed, $consumer);
             }
         };
 
@@ -144,7 +144,7 @@ class ConsumerTest extends TestCase
         }
 
         $this->assertSame(['a'], $seen);
-        $this->assertSame($first, $this->cursor->load('invalidator'), 'Progress before the failure is committed');
+        $this->assertSame($first, $this->cursor->load('edge', 'invalidator'), 'Progress before the failure is committed');
     }
 
     public function testRetriesTheFailedEventOnTheNextRun(): void
@@ -185,7 +185,7 @@ class ConsumerTest extends TestCase
             // Expected.
         }
 
-        $this->assertNull($this->cursor->load('invalidator'));
+        $this->assertNull($this->cursor->load('edge', 'invalidator'));
     }
 
     public function testAHandlerThatAcceptsEverythingCountsEveryEvent(): void
@@ -220,7 +220,7 @@ class ConsumerTest extends TestCase
     {
         $this->feed->append('a');
 
-        $consumer = $this->consumer(new FailingCursor('edge', onLoad: true));
+        $consumer = $this->consumer(new FailingCursor(onLoad: true));
         $warnings = [];
         $consumer->onWarning(function (\Throwable $error, string $context) use (&$warnings): void {
             $warnings[] = $context;
@@ -235,7 +235,7 @@ class ConsumerTest extends TestCase
         $this->feed->append('a');
         $this->feed->append('b');
 
-        $consumer = $this->consumer(new FailingCursor('edge', onSave: true));
+        $consumer = $this->consumer(new FailingCursor(onSave: true));
         $warnings = [];
         $consumer->onWarning(function (\Throwable $error, string $context) use (&$warnings): void {
             $warnings[] = $context;
@@ -253,7 +253,7 @@ class ConsumerTest extends TestCase
     {
         $this->feed->append('a');
 
-        $this->assertSame(['a'], $this->drain($this->consumer(new FailingCursor('edge', onLoad: true, onSave: true))));
+        $this->assertSame(['a'], $this->drain($this->consumer(new FailingCursor(onLoad: true, onSave: true))));
     }
 
     public function testResetReplaysEverythingStillRetained(): void
@@ -267,7 +267,7 @@ class ConsumerTest extends TestCase
         $consumer->reset();
 
         $this->assertNull($consumer->position());
-        $this->assertNull($this->cursor->load('invalidator'));
+        $this->assertNull($this->cursor->load('edge', 'invalidator'));
         $this->assertSame(['a', 'b'], $this->drain($consumer));
     }
 
@@ -295,12 +295,9 @@ class ConsumerTest extends TestCase
         new Consumer($this->feed, '', $this->cursor);
     }
 
-    public function testExposesWhatItIsConsuming(): void
+    public function testExposesItsName(): void
     {
-        $consumer = $this->consumer();
-
-        $this->assertSame('invalidator', $consumer->getName());
-        $this->assertSame($this->feed, $consumer->getFeed());
+        $this->assertSame('invalidator', $this->consumer()->getName());
     }
 
     /**
@@ -311,16 +308,16 @@ class ConsumerTest extends TestCase
     {
         $first = $this->feed->append('a');
         $this->feed->append('b');
-        $this->cursor->save('invalidator', $first);
+        $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer(new Feed(new \Utopia\Feed\Journal\None('edge')), 'invalidator', $this->cursor);
+        $consumer = new Consumer(new Feed(new \Utopia\Feed\Journal\Unconfigured('edge')), 'invalidator', $this->cursor);
 
         $this->expectException(\Utopia\Feed\Exception\Unsupported::class);
 
         try {
             $consumer->consume(fn (CloudEvent $event) => null);
         } finally {
-            $this->assertSame($first, $this->cursor->load('invalidator'));
+            $this->assertSame($first, $this->cursor->load('edge', 'invalidator'));
         }
     }
 }

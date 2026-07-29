@@ -10,30 +10,29 @@ use Utopia\Feed\Cursor;
  * Positions held in process memory.
  *
  * For tests, and for a consumer that genuinely wants to start from the
- * beginning of the retained feed on every restart. Anything else will replay
- * the whole feed each time it is deployed.
+ * beginning of the retained feed on every restart.
  */
 class Memory extends Cursor
 {
     /** @var array<string, string> */
     private array $cursors = [];
 
-    public function load(string $consumer): ?string
+    public function load(string $feed, string $consumer): ?string
     {
-        return $this->cursors[$this->key($consumer)] ?? null;
+        return $this->cursors[$this->key($feed, $consumer)] ?? null;
     }
 
-    public function save(string $consumer, string $eventId): void
+    public function save(string $feed, string $consumer, string $eventId): void
     {
         if ($eventId === '') {
             return;
         }
 
-        $this->cursors[$this->key($consumer)] = $eventId;
+        $this->cursors[$this->key($feed, $consumer)] = $eventId;
     }
 
-    public function reset(string $consumer): void
+    public function reset(string $feed, string $consumer): void
     {
-        unset($this->cursors[$this->key($consumer)]);
+        unset($this->cursors[$this->key($feed, $consumer)]);
     }
 }

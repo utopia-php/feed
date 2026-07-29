@@ -7,17 +7,13 @@ namespace Utopia\Feed;
 use Utopia\Feed\Exception\Invalid;
 
 /**
- * Feed positions.
+ * Feed positions: `<milliseconds>-<sequence>`, Redis' stream id format, where
+ * the sequence disambiguates events appended within the same millisecond.
  *
- * http-feeds requires event ids to be strictly ordered so a consumer can ask
- * for "everything after this one" with nothing but the last id it processed.
- * This library uses Redis' stream id format for them — `<milliseconds>-<seq>`,
- * where `seq` disambiguates events appended within the same millisecond.
- *
- * The format is part of the wire contract, not a Redis implementation detail:
- * an id produced by one journal has to be a valid position for another, so
- * that a feed can move between backends without invalidating the positions
- * consumers already hold.
+ * The format is part of the wire contract, not a Redis implementation detail —
+ * an id produced by one journal has to be a valid position for another, so a
+ * feed can move between backends without invalidating the positions consumers
+ * already hold.
  */
 final class Id
 {
@@ -40,7 +36,8 @@ final class Id
     }
 
     /**
-     * Split an id into its millisecond timestamp and sequence number.
+     * Split an id into its millisecond timestamp and sequence number, which
+     * compare in feed order (`10-0` is after `9-0`, not before it).
      *
      * @return array{int, int}
      * @throws Invalid When $id is not a feed position.
@@ -55,13 +52,12 @@ final class Id
     }
 
     /**
-     * The exclusive successor of an id: the smallest position strictly after
-     * it.
+     * The exclusive successor of an id: the smallest position strictly after it.
      *
      * Computed rather than relying on Redis' `(`-prefixed exclusive ranges, so
      * reads work against anything speaking the Redis 5 stream API — including
-     * the several proxies and compatible servers that never implemented the
-     * newer syntax.
+     * the proxies and compatible servers that never implemented the newer
+     * syntax.
      *
      * @throws Invalid When $id is not a feed position.
      */
@@ -70,16 +66,5 @@ final class Id
         [$timestamp, $sequence] = self::decode($id);
 
         return self::encode($timestamp, $sequence + 1);
-    }
-
-    /**
-     * Compare two positions the way `<=>` would, so ids sort by age rather
-     * than by string order (`10-0` is after `9-0`, not before it).
-     *
-     * @throws Invalid When either id is not a feed position.
-     */
-    public static function compare(string $a, string $b): int
-    {
-        return self::decode($a) <=> self::decode($b);
     }
 }

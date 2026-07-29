@@ -88,7 +88,7 @@ class RedisTest extends TestCase
         $this->assertSame($ids, \array_unique($ids));
 
         for ($i = 1; $i < \count($ids); $i++) {
-            $this->assertSame(1, Id::compare($ids[$i], $ids[$i - 1]));
+            $this->assertGreaterThan(Id::decode($ids[$i - 1]), Id::decode($ids[$i]));
         }
     }
 
@@ -217,7 +217,7 @@ class RedisTest extends TestCase
     public function testConsumesThroughAPersistedCursor(): void
     {
         $feed = $this->feed();
-        $cursor = new RedisCursor($this->redis, $this->name);
+        $cursor = new RedisCursor($this->redis);
 
         $feed->append('a');
         $last = $feed->append('b');
@@ -228,7 +228,7 @@ class RedisTest extends TestCase
         };
 
         $this->assertSame(2, (new Consumer($feed, 'invalidator', $cursor))->consume($handler));
-        $this->assertSame($last, $cursor->load('invalidator'));
+        $this->assertSame($last, $cursor->load($this->name, 'invalidator'));
 
         // A second Consumer stands in for a restart: it has no in-memory
         // position, so it has to pick the stored one up to avoid replaying.
@@ -239,7 +239,7 @@ class RedisTest extends TestCase
     public function testASecondConsumerOfTheSameFeedGetsItsOwnPosition(): void
     {
         $feed = $this->feed();
-        $cursor = new RedisCursor($this->redis, $this->name);
+        $cursor = new RedisCursor($this->redis);
 
         $feed->append('a');
 
@@ -250,7 +250,7 @@ class RedisTest extends TestCase
     public function testResetReplaysTheRetainedFeed(): void
     {
         $feed = $this->feed();
-        $cursor = new RedisCursor($this->redis, $this->name);
+        $cursor = new RedisCursor($this->redis);
 
         $feed->append('a');
         $feed->append('b');
@@ -259,13 +259,13 @@ class RedisTest extends TestCase
         $consumer->consume(fn (CloudEvent $e) => null);
         $consumer->reset();
 
-        $this->assertNull($cursor->load('invalidator'));
+        $this->assertNull($cursor->load($this->name, 'invalidator'));
         $this->assertSame(2, (new Consumer($feed, 'invalidator', $cursor))->consume(fn (CloudEvent $e) => null));
     }
 
     public function testCursorsAreStoredUnderTheFeedTheyBelongTo(): void
     {
-        (new RedisCursor($this->redis, $this->name))->save('invalidator', '1-0');
+        (new RedisCursor($this->redis))->save($this->name, 'invalidator', '1-0');
 
         $this->assertSame('1-0', $this->redis->get('feed:' . $this->name . ':cursor:invalidator'));
     }

@@ -4,138 +4,44 @@
 ![Total Downloads](https://img.shields.io/packagist/dt/utopia-php/feed.svg)
 [![Discord](https://img.shields.io/discord/564160730845151244)](https://appwrite.io/discord)
 
-Utopia Feed is a simple and lite library for moving events between services with
-**pull-based HTTP event feeds** ([http-feeds.org](https://www.http-feeds.org/)),
-instead of pushing them to every service that needs them. This library is aiming
-to be as simple and easy to learn and use. This library is maintained by the
-[Appwrite team](https://appwrite.io).
+Utopia Feed moves events between services with **pull-based HTTP event feeds**
+([http-feeds.org](https://www.http-feeds.org/)) instead of pushing them to every
+service that needs them.
 
-Although this library is part of the [Utopia
-Framework](https://github.com/utopia-php/framework) project, it is dependency
-light and can be used as standalone with any other PHP project or framework.
+A producer appends events to an ordered log. Each consumer asks *"what has
+happened since the last event I saw?"*, quoting that event's id, and keeps track
+of its own position. A consumer that was down catches up on its next poll; a
+consumer added later starts from whatever is still retained. The producer stores
+nothing per consumer, so nothing about it changes when consumers come and go.
 
-## Why pull instead of push
+The trade is **at-least-once delivery**: every event must be safe to handle
+twice. Retention is bounded, so a feed suits events that describe a state to
+converge on — a cache tag to drop, a record to refresh — rather than ones whose
+effect depends on seeing every single one.
 
-A service that pushes an event to its consumers has to reach all of them at the
-moment it happens. Any consumer that is down, redeploying, rate limited or
-simply new misses the event, and there is nothing in the system that will ever
-tell it. The producer also grows an outbound call per consumer, has to hold a
-retry queue per consumer, and has to be told when a consumer is added.
-
-A feed inverts that. The producer appends to an ordered log and forgets about
-it. Each consumer asks *"what has happened since the last thing I saw?"*,
-quoting the id of that event. A consumer that was down catches up on its next
-poll. A consumer that is added later starts from whatever is still retained. The
-producer keeps no per-consumer state at all, so nothing about it changes when
-consumers come and go.
-
-```
-                append                          GET /feeds/edge?lastEventId=...
-   producer ───────────────▶  feed  ◀───────────────────────────── consumer A
-                             (log)  ◀───────────────────────────── consumer B
-                                                                   consumer C ← added later,
-                                                                     catches up on its own
-```
-
-The trade is **at-least-once delivery**: consumers retry, replay, and restart
-from positions they have already passed, so every event has to be safe to
-process twice. Retention is bounded, so a consumer that falls a long way behind
-resumes from the oldest retained event rather than failing. That makes a feed a
-poor fit for events whose effect depends on seeing every one of them (a balance
-built out of deltas) and a good fit for events that describe a state to converge
-on — a cache tag to drop, a record to refresh, a config to reload.
-
-## Features
-
-- **Ordered, resumable log** — consumers page by event id, and hold their own position
-- **CloudEvents** — events *are* [`utopia-php/cloudevents`](https://github.com/utopia-php/cloudevents) events, as http-feeds requires
-- **Journals** — Redis streams, a pooled Redis, in-memory, or another service's feed over HTTP
-- **Long polling** — subscribe in near real time without hammering the producer
-- **Cursors** — positions in a Utopia cache, in Redis, or in memory
-- **Consumer** — the pull loop, the position bookkeeping and the at-least-once semantics, written once
-
-## How the pieces fit
-
-The library splits along the same line the design does: the **producer owns the
-events**, each **consumer owns its position**, and `Protocol` is the seam between
-them when they live in different services.
-
-```
-        PRODUCER                        │              CONSUMER
-                                        │
-  append()                              │        consume(handler)
-     ↓                                  │              ↓
-  ┌────────┐        ┌──────────┐        │        ┌──────────┐      ┌────────┐
-  │  Feed  │───────▶│ Journal  │        │        │ Consumer │─────▶│ Cursor │
-  └────────┘        │  \Redis  │        │        └──────────┘      │ \Cache │
-   policy           │  \Pool   │        │         the pull loop    └────────┘
-                    │  \Memory │        │              │          "where I got to"
-                    └──────────┘        │              ↓
-                     the events         │        ┌────────┐     ┌──────────┐
-                          │             │        │  Feed  │────▶│ Journal  │
-                          │             │        └────────┘     │  \Http   │
-                    ┌───────────┐       │                       └──────────┘
-                    │ Protocol  │◀──────┼──── HTTP GET ──────────────┘
-                    └───────────┘       │
-                  the wire contract     │
-```
-
-**`Journal`** — where the events live. It assigns an ordered id on append and
-returns the events after a given id, and nothing else. `Journal\Http` reads
-*another service's* journal, so to everything above it a remote feed and a local
-one are the same object.
-
-**`Feed`** — the policy on one journal: stamps `source` and `time` on append,
-clamps a consumer-supplied `limit`, and long-polls. Subclass it to give a feed a
-typed vocabulary.
-
-**`Cursor`** — where one consumer's position is kept. Deliberately independent of
-`Journal`: a consumer keeps its position in *its own* storage, never the
-producer's.
-
-**`Consumer`** — the pull loop. Reads from the stored position, hands each event
-to a handler oldest-first, and advances only past the events the handler
-accepted.
-
-**`Protocol`** — the HTTP contract: query parameters, response envelope and
-caching rules, held in one place so the two halves cannot drift apart.
-
-The structural consequence worth knowing up front: **the producer stores no
-per-consumer state at all.** That is what makes adding a consumer free, and it is
-why `Cursor` is its own thing rather than a method on `Journal`.
-
-Dependencies only ever point one way, so each piece is testable alone — a
-`Journal\Memory` and a `Cursor\Memory` exercise the whole pull loop with no Redis
-and no network:
-
-```
-Consumer ──▶ Feed ──▶ Journal ──▶ Protocol   (only Journal\Http)
-    └──────▶ Cursor
-```
+This library is maintained by the [Appwrite team](https://appwrite.io). Although
+it is part of the [Utopia
+Framework](https://github.com/utopia-php/framework), it is dependency light and
+works standalone with any PHP project.
 
 ## Getting started
-
-Install using composer:
 
 ```bash
 composer require utopia-php/feed
 ```
 
-### Producing
+### Produce
 
 ```php
-use Utopia\Feed\Journal\Redis as RedisJournal;
 use Utopia\Feed\Feed;
-
-$redis = new Redis();
-$redis->connect('redis', 6379);
+use Utopia\Feed\Journal;
 
 $feed = new Feed(
-    new RedisJournal($redis, 'edge'),
+    new Journal\Redis($redis, 'edge'),
     source: 'urn:appwrite:cloud:fra',
 );
 
-$feed->append(
+$id = $feed->append(
     type: 'io.appwrite.edge.invalidate-rule',
     data: ['tags' => ['domain' => 'example.com']],
     subject: 'example.com',
@@ -144,20 +50,14 @@ $feed->append(
 
 `append()` returns the event's id, which is its position in the feed.
 
-Give a feed a typed vocabulary by subclassing it, so callers cannot invent an
-event type or misspell a payload key:
+Subclass `Feed` to give it a typed vocabulary, so callers cannot invent an event
+type or misspell a payload key:
 
 ```php
 class EdgeFeed extends Feed
 {
-    public const string NAME = 'edge';
-
     public function invalidateRule(string $domain): string
     {
-        if ($domain === '') {
-            throw new \InvalidArgumentException('Rule invalidation requires a domain');
-        }
-
         return $this->append(
             'io.appwrite.edge.invalidate-rule',
             ['tags' => ['domain' => $domain]],
@@ -167,19 +67,68 @@ class EdgeFeed extends Feed
 }
 ```
 
-### Serving a feed over HTTP
+### Consume
 
-`Protocol` holds the wire contract — the query parameters, the response body and
-the caching rules — so the endpoint and its consumers cannot drift apart. It
-deals in arrays rather than requests and responses, so it fits whichever HTTP
-layer the producer is written in:
+A `Consumer` reads from where it last got to, hands each new event to your
+handler, and records how far it got:
+
+```php
+use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Consumer;
+use Utopia\Feed\Cursor;
+
+$consumer = new Consumer($feed, 'cache-invalidator', new Cursor\Cache($cache));
+
+$handled = $consumer->consume(function (CloudEvent $event) use ($router) {
+    $router->invalidate($event->data['tags'] ?? []);
+});
+```
+
+Call `consume()` on a timer, or give the consumer a `timeout` and loop — each
+call then returns the moment an event arrives, or empty after the timeout:
+
+```php
+$consumer = new Consumer($feed, 'cache-invalidator', $cursor, timeout: 20_000);
+
+while (true) {
+    $consumer->consume($handler);
+}
+```
+
+### Consume another service's feed
+
+Same code, different journal — nothing above it knows the events arrive over the
+network:
+
+```php
+use Utopia\Client;
+use Utopia\Client\Adapter\Curl\Client as Curl;
+
+$client = (new Client(new Curl()))
+    ->withHeaders(['x-appwrite-jwt' => $token])
+    ->withConnectionReuse();
+
+$feed = new Feed(new Journal\Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
+```
+
+Long polling is handled by the producer, so a poll is one held request rather
+than a client-side loop. `Journal\Http` takes any
+[utopia-php/client](https://github.com/utopia-php/client) adapter, so a pooled or
+Swoole coroutine transport drops straight in. Leave the `Retry` decorator off: a
+failed read leaves the position where it was, so the next poll is already the
+retry.
+
+### Serve a feed over HTTP
+
+`Protocol` holds the wire contract — query parameters, response body, caching
+rules — and deals in arrays, so it fits whichever HTTP layer you use:
 
 ```php
 use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
 
 // GET /v1/feeds/:feedId
-$limit = (int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH);
+$limit = Feed::limit((int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH));
 
 $events = $feed->poll(
     $request->getParam(Protocol::PARAM_LAST_EVENT_ID) ?: null,
@@ -192,204 +141,105 @@ $response
     ->json(Protocol::encode($events));
 ```
 
-`cacheControl()` marks a full batch immutable — the same query returns the same
-events forever — and a short batch `no-store`, because it is the live end of the
-feed and will grow. It defaults to `private`, since a feed is usually served
-behind authorization and `public` would let a shared cache hand one consumer's
-events to a requester that never presented a credential.
-
-### Consuming
-
-A `Consumer` reads from where it last got to, hands each new event to a handler,
-and records how far it got:
-
-```php
-use Utopia\CloudEvents\CloudEvent;
-use Utopia\Feed\Consumer;
-use Utopia\Feed\Cursor\Cache as CacheCursor;
-
-$consumer = new Consumer(
-    feed: $feed,
-    name: 'cache-invalidator',
-    cursor: new CacheCursor($cache, 'edge'),
-);
-
-$handled = $consumer->consume(function (CloudEvent $event) use ($router) {
-    $router->invalidate($event->data['tags'] ?? []);
-});
-```
-
-Consuming **another service's** feed is the same code with a different journal:
-
-```php
-use Utopia\Client;
-use Utopia\Client\Adapter\Curl\Client as Curl;
-use Utopia\Feed\Journal\Http;
-
-$client = (new Client(new Curl()))
-    ->withHeaders(['x-appwrite-jwt' => $token])
-    ->withConnectionReuse();
-
-$feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
-```
-
-Nothing above the journal knows the events are arriving over the network,
-including the long polling — `Http` hands the wait to the producer, so a poll is
-one held request rather than a client-side loop.
-
-`Http` takes any [`utopia-php/client`](https://github.com/utopia-php/client)
-adapter, so a `Pool` or a Swoole coroutine transport drops straight in. Leave the
-`Retry` decorator off, though: a failed read leaves the cursor where it was, so
-the next poll is already the retry, and retrying inside a long poll only
-multiplies how long a single tick can take.
-
-Call `consume()` on a timer, or give the consumer a `timeout` and loop:
-
-```php
-// Returns as soon as an event arrives, or after 20s with nothing.
-$consumer = new Consumer($feed, 'cache-invalidator', $cursor, timeout: 20_000);
-
-while (true) {
-    $consumer->consume($handler);
-}
-```
-
-## Journals
-
-A journal is where a feed's events actually live. The name is the one event
-sourcing has long used for an append-only, strictly ordered record that is
-replayed rather than mutated — Akka Persistence calls its pluggable storage
-backends journals for the same reason. It is responsible for exactly two things:
-assigning an ordered id on append, and returning the events strictly after a
-given id. Everything else — long polling, cursors, the pull loop — sits above it
-and is the same whichever journal is underneath.
-
-| Journal | Use for | Append | Read |
-| --- | --- | --- | --- |
-| `Journal\Redis` | Producing a feed on a Redis stream | ✅ | ✅ |
-| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ | ✅ |
-| `Journal\Http` | Consuming another service's feed, over [utopia-php/client](https://github.com/utopia-php/client) | ❌ | ✅ |
-| `Journal\Memory` | Tests, and single-process development | ✅ | ✅ |
-| `Journal\None` | No backend configured | ❌ | ❌ |
-
-`Journal\Pool` is what most services producing a feed want: a long poll holds
-its connection for the whole timeout, so reading through a shared client would
-block every other user of it.
-
-`Journal\None` throws on every operation rather than doing nothing, so a
-misconfigured service fails at the point of use instead of silently dropping
-events — which only shows up much later, somewhere else. `Journal\Memory`
-implements the same id and retention semantics as `Journal\Redis`, including the
-awkward parts like resuming from a trimmed position, so code tested against it
-behaves the same when it is swapped out.
-
-## Cursors
-
-http-feeds puts the position on the consumer rather than the producer, which is
-what makes adding a consumer free. A cursor is just somewhere to write a string:
-
-| Cursor | Use for |
-| --- | --- |
-| `Cursor\Cache` | A consumer with a [Utopia cache](https://github.com/utopia-php/cache) — the usual choice for one reading a remote feed |
-| `Cursor\Redis` | A consumer running inside the producer, with no store of its own |
-| `Cursor\Pool` | The same, over a pooled connection |
-| `Cursor\Memory` | Tests, or a consumer that should replay from the beginning on every restart |
-
-The store is allowed to be lossy. A lost position is not a lost event — a
-consumer with no position resumes from the oldest retained event — so the
-consequence is redundant work, not a gap. That is why a cache is a reasonable
-place to put one, and it is also why a `Consumer` treats a store that is down as
-a warning rather than a failure: it keeps its position in memory and carries on,
-and only a restart before the store recovers replays anything. Pass
-`onWarning()` to hear about it.
-
-Run **one process per consumer name.** Two sharing a name share one position, so
-each sees only the events the other has not already advanced past — the feed is
-split between them rather than delivered to both.
+`Feed::limit()` clamps what the consumer asked for to what a read will actually
+return, so the same number reaches `cacheControl()`. A full batch is settled
+history and is marked cacheable; a short one is the live end of the feed and is
+marked `no-store`. Caching is `private` unless you pass `public: true`.
 
 ## Events
 
-There is no event type in this library. Events **are**
+Events **are**
 [`Utopia\CloudEvents\CloudEvent`](https://github.com/utopia-php/cloudevents)
-objects, so anything already typed against one takes a feed event directly, and
-everything a CloudEvent carries — `dataschema`, extension attributes such as a
-`traceparent` — survives an append and a read untouched:
+objects — this library defines no event type of its own:
 
 ```php
-use Utopia\CloudEvents\CloudEvent;
-
 $consumer->consume(function (CloudEvent $event) {
     $tags = $event->data['tags'] ?? [];
     $trace = $event->getExtension('traceparent');
 });
 ```
 
-`data` is unrestricted, as the JSON event format requires — a map, a list, a
-string, a number or null are all valid payloads and all round-trip as
+`data` is unrestricted — a map, list, string, number or null all round-trip as
 themselves. `subject` is nullable, so an event with no subject reads back as
-`null` rather than `''`.
+`null`. `dataschema` and extension attributes survive an append and a read.
 
-The one thing this library decides for itself is how a batch is decoded, and it
-is deliberately not `CloudEvent::fromArray()`'s default:
+A batch is decoded strictly about `id`, because for a feed the id *is* the
+consumer's position, and leniently about everything else — a producer that adds
+an attribute or moves the spec forward must not stop a consumer that predates it.
 
-- **Strict about `id`.** For a feed the id *is* the consumer's position, so an
-  event without one cannot be recorded as passed. The spec makes `id` required
-  too; `Protocol` enforces exactly that one attribute rather than calling
-  `validate()`, which would also demand a well-formed URI-reference `source` —
-  a spec requirement, but not one a feed consumer depends on.
-- **Tolerant about everything else.** Decoding runs with `lenient: true` and
-  `allowUnknownSpecversion: true`, so a producer that adds an attribute, omits
-  an optional one, or moves the spec forward does not stop a consumer that
-  predates it. A feed is read by consumers older than the producer *by design*,
-  and that is what makes a staged rollout safe.
+## Journals
 
-An entry that is not a CloudEvent at all — no `specversion`, no `type` — is not
-tolerated, because that is a producer sending something other than what the feed
-is specified to carry.
+A journal is where a feed's events live. It assigns an ordered id on append and
+returns the events after a given id; everything else sits above it.
 
-## Delivery semantics
+| Journal | Use for | Append | Read |
+| --- | --- | --- | --- |
+| `Journal\Redis` | Producing a feed on a Redis stream | ✅ | ✅ |
+| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ | ✅ |
+| `Journal\Http` | Consuming another service's feed | ❌ | ✅ |
+| `Journal\Memory` | Tests and single-process development | ✅ | ✅ |
+| `Journal\Unconfigured` | No backend configured — throws on use | ❌ | ❌ |
+
+`Journal\Pool` is what most services producing a feed want: a long poll holds its
+connection for the whole timeout, so reading through a shared client would block
+every other user of it.
+
+## Cursors
+
+A cursor is where one consumer keeps its position. It is keyed by feed and
+consumer name, so a single store serves every feed a service consumes:
+
+| Cursor | Use for |
+| --- | --- |
+| `Cursor\Cache` | A consumer with a [Utopia cache](https://github.com/utopia-php/cache) — the usual choice when reading a remote feed |
+| `Cursor\Redis` | A consumer running inside the producer, with no store of its own |
+| `Cursor\Pool` | The same, over a pooled connection |
+| `Cursor\Memory` | Tests, or a consumer that should replay from the beginning on every restart |
+
+The store is allowed to be lossy: a lost position costs a replay, not a gap. A
+store that is down is a warning rather than a failure — the consumer keeps its
+position in memory and carries on. Pass `onWarning()` to hear about it:
+
+```php
+$consumer->onWarning(fn (\Throwable $error, string $context) =>
+    Console::warning("[feed] Could not {$context} the cursor: {$error->getMessage()}"));
+```
+
+Run **one process per consumer name.** Two sharing a name share one position, so
+the feed is split between them rather than delivered to both.
+
+## What a handler must tolerate
 
 **A handler must be safe to run twice on the same event.** There are three
-independent reasons, and no arrangement of this library removes any of them:
+reasons, and none of them can be arranged away:
 
 1. A handler can succeed and the position then fail to save.
 2. A run interrupted partway resumes from the last event that succeeded.
 3. A consumer whose position was lost restarts from the oldest retained event.
 
-Every one of them **re-delivers; none of them skips.** That asymmetry is the
-whole design — an event handled twice is absorbed by an idempotent handler,
-whereas an event stepped over is gone, still sitting in the feed with nothing
-that will ever read it again.
+Every one of them re-delivers; none of them skips. An event handled twice is
+absorbed by an idempotent handler, whereas an event stepped over is gone.
 
-**A handler rejects an event by throwing.** That stops the run at that event and
-leaves the position before it, so the next run starts there and tries again.
-Everything already handled in that run stays handled — progress is committed
-before the failure is re-raised. A handler that keeps failing on one event
-therefore blocks everything behind it, which is the intended behaviour: a feed
-is ordered, and stepping over a failure would deliver later events on top of
-state that was never updated.
+**A handler rejects an event by throwing.** The run stops there, the position
+stays before it, and the next run tries again. Everything handled earlier in that
+run stays handled. A handler that keeps failing blocks everything behind it —
+intentionally, because a feed is ordered and stepping over a failure would apply
+later events on top of state that was never updated.
 
-**A consumer with no recorded position starts at the oldest retained event,
-never at the tip.** Starting at the tip would drop whatever is already in the
-feed, and for a consumer being deployed for the first time that is not a
-hypothetical backlog — it is exactly the events it was meant to catch up on.
-This is what makes a staged rollout safe: ship the producer first, let events
-accumulate, then ship the consumer, and nothing in between is lost.
+**A consumer with no position starts at the oldest retained event, never at the
+tip**, so a consumer deployed after the producer catches up rather than dropping
+the backlog.
 
 ## Rolling out a feed
 
-Replacing push delivery with a feed is a two-release change, and the order
-matters:
+Replacing push delivery with a feed is a two-release change:
 
 1. **Release the producer.** It appends events; nothing reads them yet.
-2. **Release the consumers.** Each drains the backlog from its first poll,
-   because a consumer with no position starts at the oldest retained event.
-3. **Only then remove the push path.** Until every consumer is polling, removing
-   it means nothing is delivered.
+2. **Release the consumers.** Each drains the backlog from its first poll.
+3. **Only then remove the push path.**
 
-While step 2 is in progress, consumers that have not shipped yet will get a 404
-from a producer that does not serve the feed — normal, not a fault. That status
-is on the exception, so it can be told apart from a real failure:
+While step 2 is in progress, consumers get a 404 from a producer that does not
+serve the feed yet — normal, not a fault. The status is on the exception:
 
 ```php
 use Utopia\Feed\Exception\Transport;
@@ -414,31 +264,17 @@ composer install
 composer test
 ```
 
-The E2E suite runs against a real Redis, which is where the assumptions about
-stream ids and `MAXLEN` trimming are actually confirmed:
+The E2E suite runs against a real Redis, and static analysis needs `ext-redis`,
+so both run in the container:
 
 ```bash
 docker compose up -d
 docker compose exec tests composer test:e2e
-```
-
-Static analysis runs at PHPStan level max. Run it inside the container, where
-`ext-redis` is installed:
-
-```bash
 docker compose exec tests composer check
 ```
 
-The image is built from one parameterized `Dockerfile`, so testing against
-another PHP version needs no new file:
-
-```bash
-PHP_VERSION=8.6 docker compose build
-PHP_VERSION=8.6 docker compose up -d
-```
-
-To add that version to CI, add it to the `php-versions` matrix in
-`.github/workflows/tests.yml` — that is the only place versions are listed.
+To test another PHP version, build with `PHP_VERSION=8.6 docker compose build`,
+and add it to the `php-versions` matrix in `.github/workflows/tests.yml`.
 
 ## System requirements
 

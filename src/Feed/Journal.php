@@ -9,29 +9,22 @@ use Utopia\CloudEvents\Exception as CloudEventsException;
 use Utopia\Feed\Exception\Invalid;
 
 /**
- * Where a feed's events actually live.
+ * Where a feed's events live.
  *
- * Named for what event sourcing has long called an append-only, strictly
- * ordered record that is replayed rather than mutated — the same sense in which
- * Akka Persistence calls its pluggable storage backends journals.
- *
- * A journal is responsible for two things and nothing else: assigning an
- * ordered id on append, and returning the events strictly after a given id.
- * Everything above that — long polling on backends that cannot do it
- * themselves, cursors, the pull loop — is the same regardless of the backend
- * and lives in {@see Feed} and {@see Consumer}.
- *
- * Journals split into producers (Redis, Pool, Memory), which own the events,
- * and consumers ({@see Journal\Http}), which read someone else's feed over the
- * wire. The read side is identical either way, which is what lets a service
- * consume a remote feed with the same code it uses on a local one.
+ * A journal does two things: assign an ordered id on append, and return the
+ * events strictly after a given id. Everything above it — long polling,
+ * cursors, the pull loop — is the same whichever journal is underneath.
  */
 abstract class Journal
 {
     /**
+     * Microseconds between reads while waiting in {@see poll()}.
+     */
+    protected const int POLL_INTERVAL = 500_000;
+
+    /**
      * @param string $name Feed identifier. Also the key the backend stores it
-     *        under, and the path segment it is served on, so it is part of the
-     *        contract with consumers rather than a local label.
+     *        under, and the path segment it is served on.
      * @throws Invalid When $name is empty.
      */
     public function __construct(protected readonly string $name)
@@ -50,11 +43,9 @@ abstract class Journal
      * Append an event and return the id the backend assigned it.
      *
      * Any id already on $event is ignored: positions are the backend's to
-     * allocate, since only it can guarantee they are ordered.
+     * allocate, since only it can keep them ordered.
      *
-     * @throws Exception When the event cannot be appended. Never silently, and
-     *         never partially — a caller that gets an id back can tell every
-     *         consumer will see the event.
+     * @throws Exception When the event cannot be appended.
      */
     abstract public function append(CloudEvent $event): string;
 
@@ -65,30 +56,40 @@ abstract class Journal
      * An empty result means the consumer is caught up, not that the feed is
      * empty.
      *
-     * @param int $timeout Milliseconds to wait for an event before giving up,
-     *        honoured only when {@see pollable()} is true; {@see Feed::poll()}
-     *        handles the wait for every other journal.
      * @return list<CloudEvent>
      * @throws Invalid When $lastEventId is not a feed position.
      * @throws Exception When the backend cannot be read.
      */
-    abstract public function read(?string $lastEventId, int $limit, int $timeout = 0): array;
+    abstract public function read(?string $lastEventId, int $limit): array;
 
     /**
-     * Whether the backend blocks until an event arrives on its own.
+     * {@see read()}, but wait up to $timeout milliseconds for an event before
+     * answering with an empty batch.
      *
-     * False here rather than abstract because polling in a loop works against
-     * anything; a journal only overrides it when the backend can do better,
-     * and {@see Feed::poll()} then hands the wait over instead of sleeping.
+     * Waits by re-reading on an interval, which works against any backend. A
+     * journal that can do better — {@see Journal\Http} hands the wait to the
+     * producer — overrides this.
+     *
+     * @return list<CloudEvent>
+     * @throws Invalid When $lastEventId is not a feed position.
+     * @throws Exception When the backend cannot be read.
      */
-    public function pollable(): bool
+    public function poll(?string $lastEventId, int $limit, int $timeout): array
     {
-        return false;
+        $deadline = \microtime(true) + $timeout / 1000;
+
+        while (true) {
+            $events = $this->read($lastEventId, $limit);
+
+            if ($events !== [] || \microtime(true) >= $deadline) {
+                return $events;
+            }
+
+            \usleep(self::POLL_INTERVAL);
+        }
     }
 
     /**
-     * Guard a retention cap, at construction.
-     *
      * A feed must retain at least one event. Backends disagree about what a
      * non-positive cap means — some keep nothing, some keep everything — so it
      * is refused here rather than resolved differently on each one.
@@ -106,13 +107,8 @@ abstract class Journal
      * The backend fields an event is stored as.
      *
      * `data` and `extensions` are JSON so they can hold what CloudEvents lets
-     * them hold; every other attribute is a flat string, because those are the
-     * ones a backend may want to index or filter on. The id is not among them
-     * — it is the key the entry is stored under.
-     *
-     * Extensions are stored rather than dropped: a producer that attaches one
-     * — a `traceparent`, say — means it to reach the consumer, and losing it
-     * on the way through the backend would be invisible at both ends.
+     * them hold; every other attribute is a flat string a backend can index.
+     * The id is not among them — it is the key the entry is stored under.
      *
      * @return array<string, string>
      * @throws Invalid When the payload cannot be encoded.
@@ -122,12 +118,12 @@ abstract class Journal
         return [
             'type' => $event->type,
             'source' => $event->source,
-            // CloudEvents models an absent subject as null. A backend field is
-            // a string, so it is normalized here rather than stored as a null
-            // that would read back as "" on one backend and break on another.
+            // CloudEvents models an absent subject and dataschema as null, and
+            // a backend field cannot hold one, so both are normalized here and
+            // read back as absent in decode().
             'subject' => $event->subject ?? '',
-            'time' => $event->time,
             'dataschema' => $event->dataschema ?? '',
+            'time' => $event->time,
             'data' => self::json($event->data, 'data'),
             'extensions' => self::json($event->getExtensions(), 'extensions'),
         ];
@@ -136,12 +132,8 @@ abstract class Journal
     /**
      * Rebuild an event from what {@see encode()} stored.
      *
-     * Decoded leniently, for the same reason {@see Protocol::decode()} is: the
-     * event happened, its id is a valid position, and refusing to return it
-     * over one malformed attribute would wedge every consumer behind it.
-     *
      * @param array<array-key, mixed> $fields
-     * @throws Invalid When the stored entry cannot be read as an event at all.
+     * @throws Invalid When the stored entry cannot be read as an event.
      */
     protected static function decode(string $id, array $fields): CloudEvent
     {
@@ -156,11 +148,6 @@ abstract class Journal
             'data' => \json_decode(self::field($fields, 'data'), true),
         ];
 
-        // The inverse of the normalization in encode(): these two are nullable
-        // on a CloudEvent, and a backend field cannot hold a null, so an empty
-        // stored field means the attribute was absent. Passing the empty string
-        // through instead would turn "no subject" into "a subject that is the
-        // empty string" on every round trip through a backend.
         foreach (['subject', 'dataschema'] as $optional) {
             $value = self::field($fields, $optional);
 
@@ -169,14 +156,16 @@ abstract class Journal
             }
         }
 
-        // The union operator rather than a spread, which renumbers integer keys.
-        // An extension name of only digits is legal — the spec allows [a-z0-9]+ —
-        // and PHP stores such a name as an int key, so a spread would silently
-        // rename "123" to the next free position and lose the attribute.
-        // Spec attributes stay on the left, so they win any collision.
+        // The union operator rather than a spread, which renumbers integer
+        // keys: an extension named only of digits is legal, and PHP holds such
+        // a name as an int key. Spec attributes stay on the left, so they win
+        // any collision.
         $event += \is_array($extensions) ? $extensions : [];
 
         try {
+            // Lenient for the same reason Protocol::decode() is: the event
+            // happened and its id is a valid position, so refusing to return it
+            // over one malformed attribute would wedge every consumer behind it.
             return CloudEvent::fromArray($event, lenient: true);
         } catch (CloudEventsException $error) {
             throw new Invalid("Feed entry {$id} could not be read as an event: {$error->getMessage()}", previous: $error);

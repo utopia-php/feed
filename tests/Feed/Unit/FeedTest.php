@@ -6,7 +6,7 @@ namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Journal\Memory;
-use Utopia\Feed\Journal\None;
+use Utopia\Feed\Journal\Unconfigured;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
@@ -88,7 +88,7 @@ class FeedTest extends TestCase
         $this->assertSame($ids, \array_unique($ids), 'Positions must be unique');
 
         for ($i = 1; $i < \count($ids); $i++) {
-            $this->assertSame(1, Id::compare($ids[$i], $ids[$i - 1]), 'Positions must increase');
+            $this->assertGreaterThan(Id::decode($ids[$i - 1]), Id::decode($ids[$i]), 'Positions must increase');
         }
     }
 
@@ -142,11 +142,38 @@ class FeedTest extends TestCase
         $this->assertCount(1, $this->feed->read(null, -5));
     }
 
+    /**
+     * An endpoint serving this feed clamps with the same helper, so the limit
+     * it passes to `Protocol::cacheControl()` is the one the batch was built
+     * with.
+     */
+    public function testExposesTheLimitAReadWillActuallyUse(): void
+    {
+        $this->assertSame(50, Feed::limit(50));
+        $this->assertSame(Feed::MAX_BATCH, Feed::limit(Feed::MAX_BATCH * 10));
+        $this->assertSame(1, Feed::limit(0));
+        $this->assertSame(1, Feed::limit(-5));
+    }
+
     public function testRejectsAPositionThatIsNotAFeedId(): void
     {
         $this->expectException(Invalid::class);
 
         $this->feed->read('not-a-position');
+    }
+
+    /**
+     * CloudEvents requires a source, and a feed that stamped an empty one would
+     * produce events no consumer can attribute — so it is refused rather than
+     * appended.
+     */
+    public function testRejectsAnAppendToAFeedWithNoSource(): void
+    {
+        $feed = new Feed(new Memory('edge'));
+
+        $this->expectException(Invalid::class);
+
+        $feed->append('test');
     }
 
     public function testRejectsAnEmptyEventType(): void
@@ -314,7 +341,7 @@ class FeedTest extends TestCase
 
     public function testRetentionIsBoundedAndTrimsTheOldest(): void
     {
-        $feed = new Feed(new Memory('small', maxSize: 3));
+        $feed = new Feed(new Memory('small', maxSize: 3), 'urn:appwrite:cloud:fra');
 
         foreach (['a', 'b', 'c', 'd', 'e'] as $type) {
             $feed->append($type);
@@ -329,26 +356,23 @@ class FeedTest extends TestCase
      */
     public function testAPositionBelowTheTrimHorizonReadsWhatIsLeft(): void
     {
-        $feed = new Feed($journal = new Memory('small', maxSize: 2));
+        $feed = new Feed(new Memory('small', maxSize: 2), 'urn:appwrite:cloud:fra');
 
         $first = $feed->append('a');
         $feed->append('b');
         $feed->append('c');
 
-        $this->assertSame(2, $journal->count());
         $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read($first)));
     }
 
-    public function testExposesItsIdentity(): void
+    public function testExposesTheFeedItReads(): void
     {
         $this->assertSame('edge', $this->feed->getName());
-        $this->assertSame('urn:appwrite:cloud:fra', $this->feed->getSource());
-        $this->assertSame($this->journal, $this->feed->getJournal());
     }
 
     public function testAnUnconfiguredBackendFailsLoudlyRatherThanDroppingEvents(): void
     {
-        $feed = new Feed(new None('edge'));
+        $feed = new Feed(new Unconfigured('edge'), 'urn:appwrite:cloud:fra');
 
         $this->expectException(Unsupported::class);
 
@@ -357,7 +381,7 @@ class FeedTest extends TestCase
 
     public function testAnUnconfiguredBackendCannotBeRead(): void
     {
-        $feed = new Feed(new None('edge'));
+        $feed = new Feed(new Unconfigured('edge'));
 
         $this->expectException(Unsupported::class);
 
@@ -398,7 +422,7 @@ class FeedTest extends TestCase
 
     public function testAcceptsTheSmallestUsefulRetentionCap(): void
     {
-        $feed = new Feed(new Memory('edge', maxSize: 1));
+        $feed = new Feed(new Memory('edge', maxSize: 1), 'urn:appwrite:cloud:fra');
 
         $feed->append('a');
         $feed->append('b');
@@ -407,14 +431,5 @@ class FeedTest extends TestCase
 
         $this->assertCount(1, $events);
         $this->assertSame('b', $events[0]->type);
-    }
-
-    public function testFlushingMemoryDoesNotReissuePositions(): void
-    {
-        $before = $this->feed->append('a');
-        $this->journal->flush();
-        $after = $this->feed->append('b');
-
-        $this->assertSame(1, Id::compare($after, $before), 'A reissued position would make a consumer skip events');
     }
 }

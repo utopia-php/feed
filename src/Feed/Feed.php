@@ -7,26 +7,18 @@ namespace Utopia\Feed;
 use Utopia\CloudEvents\CloudEvent;
 
 /**
- * An append-only, strongly ordered sequence of events that consumers pull.
+ * An append-only, ordered sequence of events that consumers pull.
  *
- * Follows http-feeds (https://www.http-feeds.org/): rather than the producer
- * pushing every event to every consumer, each consumer asks for what it has
- * not seen yet, quoting the id of the last event it processed. Delivery then
- * stops depending on every consumer being reachable at the moment something
- * happens — one that was down, redeploying, or only just added catches up on
- * its next read instead of missing the event entirely.
+ * Follows http-feeds (https://www.http-feeds.org/): each consumer asks for what
+ * it has not seen yet, quoting the id of the last event it processed, so one
+ * that was down or only just deployed catches up on its next read.
  *
- * The trade is at-least-once delivery. Consumers fall behind, retry, and
- * restart from positions they have already passed, so **every event must be
- * safe to process twice**. Retention is bounded, so a consumer that falls
- * behind the trim horizon resumes from the oldest retained event rather than
- * failing — which makes the feed unsuitable for events whose effect depends on
- * seeing all of them (a balance built from deltas), and a good fit for events
- * that describe a state to converge on (a cache tag to drop, a record to
- * refresh).
+ * Delivery is at-least-once and retention is bounded, so every event must be
+ * safe to process twice, and a consumer that falls behind the trim horizon
+ * resumes from the oldest retained event.
  *
  * ```php
- * $feed = new Feed(new Redis($redis, 'edge'), 'urn:appwrite:cloud:fra');
+ * $feed = new Feed(new Journal\Redis($redis, 'edge'), 'urn:appwrite:cloud:fra');
  *
  * $feed->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']]);
  *
@@ -41,34 +33,23 @@ use Utopia\CloudEvents\CloudEvent;
 class Feed
 {
     /**
-     * Most events a single read may return. A cap belongs here rather than on
-     * the caller: `limit` arrives from a consumer over the network, and an
-     * unbounded read is a way to hold a producer's worker open.
+     * Most events a single read may return. The cap belongs here because
+     * `limit` arrives from a consumer over the network.
      */
     public const int MAX_BATCH = 1000;
 
     /**
-     * Longest a long poll may hold a request open, in milliseconds. Kept
-     * under the 60s that proxies and load balancers commonly cut idle
-     * responses off at, so a poll ends by returning empty rather than by
-     * having the connection dropped underneath it.
+     * Longest a long poll may hold a request open, in milliseconds. Kept under
+     * the 60s that proxies commonly cut idle responses off at.
      */
     public const int MAX_TIMEOUT = 30_000;
 
     /**
-     * Microseconds between reads while long polling on a backend that cannot
-     * block on its own. Half a second bounds delivery latency at roughly that,
-     * while keeping a quiet feed at two reads a second per consumer.
-     */
-    protected const int POLL_INTERVAL = 500_000;
-
-    /**
      * @param Journal $journal Where the events live.
      * @param string $source Who is producing them, as a URI reference
-     *        (`urn:appwrite:cloud:fra`). Stamped onto every event this
-     *        instance appends, so a consumer merging feeds from several
-     *        producers can tell which one an event came from. Irrelevant when
-     *        the feed is only being read.
+     *        (`urn:appwrite:cloud:fra`). Stamped onto every event this instance
+     *        appends, so a consumer merging feeds from several producers can
+     *        tell them apart. Only needed to append, not to read.
      */
     public function __construct(
         protected readonly Journal $journal,
@@ -76,19 +57,9 @@ class Feed
     ) {
     }
 
-    public function getJournal(): Journal
-    {
-        return $this->journal;
-    }
-
     public function getName(): string
     {
         return $this->journal->getName();
-    }
-
-    public function getSource(): string
-    {
-        return $this->source;
     }
 
     /**
@@ -96,20 +67,14 @@ class Feed
      *
      * @param string $type What happened, in reverse-DNS notation.
      * @param mixed $data Payload, JSON encodable. Usually a map, but the JSON
-     *        event format leaves it unrestricted, so a list or a scalar is
-     *        equally valid.
-     * @param string $subject The one business object this is about, if there
-     *        is one. Empty means none, which is how CloudEvents models it.
-     * @throws Exception\Invalid When $type is empty or $data cannot be
-     *         encoded.
+     *        event format leaves it unrestricted.
+     * @param string $subject The one business object this is about, if there is
+     *        one. Empty means none, which is how CloudEvents models it.
+     * @throws Exception\Invalid When $type is empty or $data cannot be encoded.
      * @throws Exception When the backend rejects the append.
      */
     public function append(string $type, mixed $data = [], string $subject = ''): string
     {
-        if ($type === '') {
-            throw new Exception\Invalid('Feed event type is required');
-        }
-
         return $this->publish(new CloudEvent(
             type: $type,
             subject: $subject === '' ? null : $subject,
@@ -118,16 +83,11 @@ class Feed
     }
 
     /**
-     * Append a prepared event, stamping it with this feed's source and the
-     * current time.
+     * Append a prepared event, stamping it with this feed's source and, unless
+     * it already has one, the current time.
      *
-     * Both are stamped here rather than accepted from the caller because they
-     * describe the append itself. Recording the source at append rather than
-     * at read also keeps it correct for a feed that is replicated or read back
-     * from somewhere other than where it was written.
-     *
-     * @throws Exception\Invalid When the event has no type or its data cannot
-     *         be encoded.
+     * @throws Exception\Invalid When the event has no type, the feed has no
+     *         source, or the data cannot be encoded.
      * @throws Exception When the backend rejects the append.
      */
     public function publish(CloudEvent $event): string
@@ -136,14 +96,16 @@ class Feed
             throw new Exception\Invalid('Feed event type is required');
         }
 
+        if ($this->source === '') {
+            throw new Exception\Invalid('Feed source is required to append; construct the feed with one');
+        }
+
         // Stamped with the withers rather than rebuilt, so anything this
         // library does not model itself — a dataschema, an extension attribute
         // such as a traceparent — survives the append untouched.
-        return $this->journal->append(
-            $event
-                ->withSource($this->source)
-                ->withTime($event->time !== '' ? $event->time : null)
-        );
+        $event = $event->withSource($this->source);
+
+        return $this->journal->append($event->time === '' ? $event->withTime() : $event);
     }
 
     /**
@@ -165,18 +127,14 @@ class Feed
      * {@see read()}, but when there is nothing new yet, wait up to $timeout
      * milliseconds for something to arrive before answering.
      *
-     * This is how a consumer subscribes in near real time without hammering
-     * the producer: poll in a loop with a timeout, and each call either
-     * returns as soon as an event is appended or costs one request per
-     * timeout while the feed is quiet. A timeout of 0 makes this a plain read.
+     * This is how a consumer subscribes in near real time without hammering the
+     * producer. The batch may still come back empty — the timeout elapsing is a
+     * normal outcome, not a failure. A timeout of 0 makes this a plain read.
      *
-     * The batch may still come back empty — the timeout elapsing is a normal
-     * outcome, not a failure.
-     *
-     * Where the backend cannot block on its own this waits by re-reading on an
-     * interval, which under Swoole yields the worker only if coroutine hooks
-     * are enabled. Without them it holds the worker for the duration, so run
-     * it with hooks on or keep the timeout at 0.
+     * Journals that cannot block wait by re-reading on an interval, which under
+     * Swoole yields the worker only if coroutine hooks are enabled. Without them
+     * it holds the worker for the duration, so run it with hooks on or keep the
+     * timeout at 0.
      *
      * @return list<CloudEvent>
      * @throws Exception\Invalid When $lastEventId is not a feed position.
@@ -184,32 +142,25 @@ class Feed
      */
     public function poll(?string $lastEventId = null, int $limit = self::MAX_BATCH, int $timeout = 0): array
     {
-        $limit = self::limit($limit);
-        $timeout = \max(0, \min($timeout, self::MAX_TIMEOUT));
-
-        if ($this->journal->pollable()) {
-            return $this->journal->read($lastEventId, $limit, $timeout);
-        }
-
-        $deadline = \microtime(true) + $timeout / 1000;
-
-        while (true) {
-            $events = $this->journal->read($lastEventId, $limit);
-
-            if ($events !== [] || \microtime(true) >= $deadline) {
-                return $events;
-            }
-
-            \usleep(self::POLL_INTERVAL);
-        }
+        return $this->journal->poll(
+            $lastEventId,
+            self::limit($limit),
+            \max(0, \min($timeout, self::MAX_TIMEOUT)),
+        );
     }
 
     /**
-     * Clamp rather than reject: `limit` is a hint about how much work a
+     * The limit a read will actually use.
+     *
+     * Clamped rather than rejected: `limit` is a hint about how much work a
      * consumer wants in one go, and failing a read because it asked for too
      * much would stall a feed over something the producer can simply decide.
+     *
+     * An endpoint serving this feed should clamp with this before answering, so
+     * the number it passes to {@see Protocol::cacheControl()} is the one the
+     * batch was actually built with.
      */
-    private static function limit(int $limit): int
+    public static function limit(int $limit): int
     {
         return \max(1, \min($limit, self::MAX_BATCH));
     }

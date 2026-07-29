@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Utopia\Feed\Journal;
 
-use Utopia\Feed\Journal;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
+use Utopia\Feed\Journal;
 use Utopia\Pools\Pool as UtopiaPool;
 
 /**
  * {@see Redis}, over a pooled connection.
  *
- * What most services actually want: a long poll holds its connection for the
- * whole timeout, so a feed read from a shared client would block every other
- * user of it. Taking a connection per operation keeps that contained.
+ * What most services producing a feed want: a long poll holds its connection
+ * for the whole timeout, so reading through a shared client would block every
+ * other user of it.
  *
  * @see https://github.com/utopia-php/pools
  */
@@ -41,10 +41,10 @@ class Pool extends Journal
         return $this->pool->use(fn (\Redis|\RedisCluster $redis): string => $this->journal($redis)->append($event));
     }
 
-    public function read(?string $lastEventId, int $limit, int $timeout = 0): array
+    public function read(?string $lastEventId, int $limit): array
     {
         return $this->pool->use(
-            fn (\Redis|\RedisCluster $redis): array => $this->journal($redis)->read($lastEventId, $limit, $timeout)
+            fn (\Redis|\RedisCluster $redis): array => $this->journal($redis)->read($lastEventId, $limit)
         );
     }
 

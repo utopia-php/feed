@@ -13,28 +13,26 @@ use Utopia\Feed\Exception\Transport;
 class FailingCursor extends Memory
 {
     public function __construct(
-        string $feed,
         private readonly bool $onLoad = false,
         private readonly bool $onSave = false,
     ) {
-        parent::__construct($feed);
     }
 
-    public function load(string $consumer): ?string
+    public function load(string $feed, string $consumer): ?string
     {
         if ($this->onLoad) {
             throw new Transport('Cursor store is unavailable');
         }
 
-        return parent::load($consumer);
+        return parent::load($feed, $consumer);
     }
 
-    public function save(string $consumer, string $eventId): void
+    public function save(string $feed, string $consumer, string $eventId): void
     {
         if ($this->onSave) {
             throw new Transport('Cursor store is unavailable');
         }
 
-        parent::save($consumer, $eventId);
+        parent::save($feed, $consumer, $eventId);
     }
 }

@@ -11,7 +11,7 @@ use Utopia\CloudEvents\CloudEvent;
  * and records how far it got.
  *
  * ```php
- * $consumer = new Consumer($feed, 'cache-invalidator', new Cursor\Cache($cache, 'edge'));
+ * $consumer = new Consumer($feed, 'cache-invalidator', new Cursor\Cache($cache));
  *
  * // On a timer, or in a loop with a long-poll timeout:
  * $consumer->consume(function (CloudEvent $event) use ($cache) {
@@ -19,55 +19,22 @@ use Utopia\CloudEvents\CloudEvent;
  * });
  * ```
  *
- * ## What the handler must tolerate
- *
- * Delivery is at-least-once, so a handler will see the same event more than
- * once and must be safe to repeat. There are three separate reasons, and no
- * arrangement of this class removes any of them:
- *
- * 1. A handler can succeed and the position then fail to save.
- * 2. A batch interrupted partway replays from the last event that succeeded.
- * 3. A consumer whose position is lost restarts from the oldest retained event.
- *
- * Every one of them re-delivers; none of them skips. That asymmetry is the
- * whole design — an event handled twice is absorbed by an idempotent handler,
- * whereas an event stepped over is gone, still sitting in the feed with nothing
- * that will ever read it again.
- *
- * A handler rejects an event by throwing. That stops the run at that event and
- * leaves the position before it, so the next run starts there and tries again.
- * Everything already handled in that run stays handled — progress is committed
- * before the failure is re-raised — which means a handler that fails on one
- * event does not undo the batch, but does block everything behind it until it
- * stops failing. That is the intended behaviour: a feed is ordered, and
- * stepping over a failure would deliver later events on top of state that was
- * never updated.
- *
- * ## Starting position
- *
- * A consumer with no recorded position starts at the oldest retained event,
- * never at the tip. Starting at the tip would drop whatever is already in the
- * feed, and for a consumer being deployed for the first time that is not a
- * hypothetical backlog — it is everything that happened between the producer
- * shipping and the consumer shipping, which during a staged rollout is exactly
- * the events that were meant to be caught up on.
+ * Delivery is at-least-once, so a handler must be safe to run twice on the same
+ * event. A handler rejects an event by throwing, which stops the run there and
+ * leaves the position before it, so the next run tries again. See the README
+ * for what that means in practice.
  */
 class Consumer
 {
     /**
      * Events per run. Small enough that a backlog drains in bounded steps
-     * instead of one long pass that fails near the end and repeats most of
-     * itself.
+     * instead of one long pass that fails near the end and repeats itself.
      */
     public const int BATCH = 100;
 
     /**
-     * The position, mirrored in memory.
-     *
-     * A run therefore reads the store once, on its first pass, and a store
-     * that becomes unavailable afterwards costs nothing — the consumer keeps
-     * making progress and only replays if it restarts before the store
-     * recovers.
+     * The position, mirrored in memory, so a run reads the store once and a
+     * store that becomes unavailable afterwards costs nothing.
      */
     private ?string $position = null;
 
@@ -80,20 +47,15 @@ class Consumer
      * @param Feed $feed Feed to read.
      * @param string $name This consumer's name, which its position is stored
      *        under. Distinct per logical consumer, and stable across restarts.
-     *
-     *        **One process per name.** Two sharing a name share one position,
-     *        so each sees only the events the other has not already advanced
-     *        past — the feed is split between them rather than delivered to
-     *        both, which is not what a handler written against this class
-     *        expects. Give each replica the same name only if you mean them to
-     *        divide the work.
+     *        Run **one process per name** — two sharing a name share one
+     *        position, so the feed is split between them rather than delivered
+     *        to both.
      * @param Cursor $cursor Where to keep the position.
      * @param int $batch Events per run.
      * @param int $timeout Milliseconds to wait for an event when the feed is
      *        caught up. Zero returns immediately, which is what a consumer
-     *        driven by an external timer wants; a non-zero value suits a
-     *        consumer looping on its own, where it replaces a sleep with a
-     *        wait that ends the moment an event arrives.
+     *        driven by an external timer wants; a non-zero value suits one
+     *        looping on its own.
      * @throws Exception\Invalid When $name is empty.
      */
     public function __construct(
@@ -113,19 +75,14 @@ class Consumer
         return $this->name;
     }
 
-    public function getFeed(): Feed
-    {
-        return $this->feed;
-    }
-
     /**
      * Report failures that were survived rather than raised — currently, a
      * position that could not be loaded or saved.
      *
-     * These are not fatal: the consumer carries on with its in-memory
-     * position and the only cost is a replay after a restart. They are still
-     * worth knowing about, because a store that has been failing quietly for a
-     * week is a replay of the entire retained feed waiting to happen.
+     * These are not fatal: the consumer carries on with its in-memory position
+     * and the only cost is a replay after a restart. They are still worth
+     * knowing about, because a store that has been failing quietly for a week
+     * is a replay of the entire retained feed waiting to happen.
      *
      * @param (callable(\Throwable, string): void)|null $callback Receives the
      *        error and a short context string.
@@ -141,13 +98,13 @@ class Consumer
      * Hand every event not yet seen to $handler, oldest first, and return how
      * many it accepted.
      *
-     * @param callable(CloudEvent): void $handler Throws to reject an event, which
-     *        stops the run and leaves the position before it.
+     * @param callable(CloudEvent): void $handler Throws to reject an event,
+     *        which stops the run and leaves the position before it.
      * @return int Events handled. Zero means the consumer is caught up.
      * @throws Exception When the feed cannot be read. The position stays where
      *         it was, so the next run retries the same events.
-     * @throws \Throwable Whatever the handler threw, after the events before
-     *         it have been committed.
+     * @throws \Throwable Whatever the handler threw, after the events before it
+     *         have been committed.
      */
     public function consume(callable $handler): int
     {
@@ -196,13 +153,12 @@ class Consumer
         $this->restored = true;
 
         try {
-            $this->position = $this->cursor->load($this->name);
+            $this->position = $this->cursor->load($this->feed->getName(), $this->name);
         } catch (\Throwable $error) {
             // Falls through to null, which restarts from the oldest retained
-            // event. Wasteful — it replays events already handled — but the
-            // alternatives are worse: guessing at a position risks skipping,
-            // and refusing to run means an outage in the cursor store becomes
-            // an outage in whatever the feed drives.
+            // event. Wasteful, but the alternatives are worse: guessing at a
+            // position risks skipping, and refusing to run turns an outage in
+            // the cursor store into an outage in whatever the feed drives.
             $this->warn($error, 'load');
         }
 
@@ -217,7 +173,7 @@ class Consumer
      */
     public function reset(): void
     {
-        $this->cursor->reset($this->name);
+        $this->cursor->reset($this->feed->getName(), $this->name);
 
         $this->position = null;
         $this->restored = true;
@@ -228,10 +184,10 @@ class Consumer
         $this->position = $eventId;
 
         try {
-            $this->cursor->save($this->name, $eventId);
+            $this->cursor->save($this->feed->getName(), $this->name, $eventId);
         } catch (\Throwable $error) {
-            // In-memory position already moved, so this process does not
-            // repeat itself; only a restart before the store recovers replays.
+            // In-memory position already moved, so this process does not repeat
+            // itself; only a restart before the store recovers replays.
             $this->warn($error, 'save');
         }
     }

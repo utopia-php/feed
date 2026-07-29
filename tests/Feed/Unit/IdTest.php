@@ -61,22 +61,21 @@ class IdTest extends TestCase
     }
 
     /**
-     * The reason ids are compared by parts rather than as strings: `10-0`
-     * sorts before `9-0` lexically, which would make a consumer treat a newer
-     * event as one it had already passed.
+     * The reason positions are compared as decoded parts rather than as
+     * strings: `10-0` sorts before `9-0` lexically, which would make a consumer
+     * treat a newer event as one it had already passed.
      */
-    public function testComparesNumericallyNotLexically(): void
+    public function testDecodedIdsCompareInFeedOrderNotLexically(): void
     {
-        $this->assertSame(1, Id::compare('10-0', '9-0'));
-        $this->assertSame(-1, Id::compare('9-0', '10-0'));
-        $this->assertSame(0, Id::compare('10-0', '10-0'));
-        $this->assertSame(1, Id::compare('10-2', '10-1'));
+        $this->assertGreaterThan(Id::decode('9-0'), Id::decode('10-0'));
+        $this->assertGreaterThan(Id::decode('10-1'), Id::decode('10-2'));
+        $this->assertSame(Id::decode('10-0'), Id::decode('10-0'));
     }
 
-    public function testCompareRejectsAnIdThatIsNotAPosition(): void
+    public function testDecodeRejectsAnIdThatIsNotAPosition(): void
     {
         $this->expectException(Invalid::class);
 
-        Id::compare('1-0', 'nope');
+        Id::decode('nope');
     }
 }
