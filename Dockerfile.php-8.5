@@ -1,0 +1,25 @@
+FROM composer:2.7 as step0
+
+WORKDIR /src/
+
+COPY composer.lock /src/
+COPY composer.json /src/
+
+RUN composer install --ignore-platform-reqs --optimize-autoloader \
+    --no-plugins --no-scripts --prefer-dist
+
+FROM appwrite/utopia-base:php-8.5-1.0.0 as final
+
+LABEL maintainer="team@appwrite.io"
+
+WORKDIR /code
+
+COPY --from=step0 /src/vendor /code/vendor
+
+# Add Source Code
+COPY ./src /code/src
+COPY ./tests /code/tests
+COPY ./phpunit.xml /code/phpunit.xml
+COPY ./phpstan.neon /code/phpstan.neon
+
+CMD [ "tail", "-f", "/dev/null" ]

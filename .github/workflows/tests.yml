@@ -1,0 +1,28 @@
+name: "Tests"
+
+on: [pull_request]
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-versions: ['8.3', '8.4', '8.5']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          export PHP_VERSION=${{ matrix.php-versions }}
+          docker compose build
+          docker compose up -d
+
+      - name: Unit tests
+        run: docker compose exec -T tests vendor/bin/phpunit --testsuite unit
+
+      - name: E2E tests
+        run: docker compose exec -T tests vendor/bin/phpunit --testsuite e2e

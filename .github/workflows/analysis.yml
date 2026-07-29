@@ -1,0 +1,23 @@
+name: "Static analysis"
+
+on: [pull_request]
+
+jobs:
+  check:
+    name: PHPStan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Run against the test image rather than a bare composer container: the
+      # Redis stream calls only resolve where ext-redis is actually installed.
+      - name: Build
+        run: |
+          export PHP_VERSION=8.4
+          docker compose build tests
+          docker compose up -d tests
+
+      - name: Run PHPStan
+        run: docker compose exec -T tests composer check
