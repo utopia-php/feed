@@ -75,15 +75,16 @@ class Consumer
      * @param string $name This consumer's name, which its position is stored
      *        under. Distinct per logical consumer, and stable across restarts.
      *
-     *        **One process per name.** The position is written with a plain
-     *        set, not a compare-and-set, so two processes sharing a name race:
-     *        each skips what the other handled, and a slower one finishing a
-     *        shorter batch later moves the stored position *backwards*, so a
-     *        restart replays from there. Neither outcome loses events —
-     *        delivery is at-least-once and handlers must tolerate a repeat
-     *        regardless — but the work is wasted and progress stops being
-     *        monotonic. Run one process per name, and let a rolling restart's
-     *        brief overlap be absorbed by the handler's idempotence.
+     *        **One process per name.** Two processes sharing a name each skip
+     *        what the other handled, because neither sees the other's work
+     *        before reading its own position. That is wasted effort, not lost
+     *        events — delivery is at-least-once and handlers must tolerate a
+     *        repeat regardless.
+     *
+     *        The overlap a rolling restart creates is therefore safe, and
+     *        {@see Cursor::save()} additionally refuses to move a stored
+     *        position backwards, so the departing process cannot undo the
+     *        arriving one's progress.
      * @param Cursor $cursor Where to keep the position.
      * @param int $batch Events per run.
      * @param int $timeout Milliseconds to wait for an event when the feed is

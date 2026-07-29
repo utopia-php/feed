@@ -303,6 +303,14 @@ a warning rather than a failure: it keeps its position in memory and carries on,
 and only a restart before the store recovers replays anything. Pass
 `onWarning()` to hear about it.
 
+A position never moves **backwards**. Run one process per consumer name — but a
+rolling restart briefly overlaps two, and without this the departing one
+finishing a shorter batch would land its older position last and undo the
+arriving one's progress. Positions are totally ordered, so `save()` compares
+before writing and drops anything that is not an advance. The comparison is not
+atomic, so a sub-millisecond interleave can still slip through; the cost of that
+is a replay, which every handler must already tolerate.
+
 ## Events
 
 There is no event type in this library. Events **are**

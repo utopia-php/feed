@@ -52,7 +52,7 @@ class Cache extends Cursor
 
     public function save(string $consumer, string $eventId): void
     {
-        if ($eventId === '') {
+        if (!$this->shouldAdvance($consumer, $eventId)) {
             return;
         }
 

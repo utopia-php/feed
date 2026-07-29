@@ -27,23 +27,9 @@ class Redis extends Cursor
         parent::__construct($feed);
     }
 
-    public function load(string $consumer): ?string
-    {
-        $key = $this->key($consumer);
-
-        try {
-            /** @var mixed $cursor */
-            $cursor = $this->redis->get($key);
-        } catch (\RedisException $error) {
-            throw new Transport("Failed to load the {$consumer} cursor: {$error->getMessage()}", previous: $error);
-        }
-
-        return \is_string($cursor) && $cursor !== '' ? $cursor : null;
-    }
-
     public function save(string $consumer, string $eventId): void
     {
-        if ($eventId === '') {
+        if (!$this->shouldAdvance($consumer, $eventId)) {
             return;
         }
 
@@ -57,6 +43,20 @@ class Redis extends Cursor
         } catch (\RedisException $error) {
             throw new Transport("Failed to save the {$consumer} cursor: {$error->getMessage()}", previous: $error);
         }
+    }
+
+    public function load(string $consumer): ?string
+    {
+        $key = $this->key($consumer);
+
+        try {
+            /** @var mixed $cursor */
+            $cursor = $this->redis->get($key);
+        } catch (\RedisException $error) {
+            throw new Transport("Failed to load the {$consumer} cursor: {$error->getMessage()}", previous: $error);
+        }
+
+        return \is_string($cursor) && $cursor !== '' ? $cursor : null;
     }
 
     public function reset(string $consumer): void

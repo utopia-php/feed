@@ -263,6 +263,24 @@ class RedisTest extends TestCase
         $this->assertSame(2, (new Consumer($feed, 'invalidator', $cursor))->consume(fn (CloudEvent $e) => null));
     }
 
+    /**
+     * The rolling-restart case, against a real store: the departing process
+     * finishing a shorter batch must not undo the arriving one's progress.
+     */
+    public function testAPositionNeverMovesBackwards(): void
+    {
+        $cursor = new RedisCursor($this->redis, $this->name);
+
+        $cursor->save('invalidator', '1690000000000-5');
+        $cursor->save('invalidator', '1690000000000-2');
+
+        $this->assertSame('1690000000000-5', $cursor->load('invalidator'));
+
+        $cursor->save('invalidator', '1690000000001-0');
+
+        $this->assertSame('1690000000001-0', $cursor->load('invalidator'), 'A genuine advance still lands');
+    }
+
     public function testCursorsAreStoredUnderTheFeedTheyBelongTo(): void
     {
         (new RedisCursor($this->redis, $this->name))->save('invalidator', '1-0');
