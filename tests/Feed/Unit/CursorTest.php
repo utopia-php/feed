@@ -10,6 +10,7 @@ use Utopia\Cache\Cache as UtopiaCache;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor\Cache;
 use Utopia\Feed\Cursor\Memory;
+use Utopia\Feed\Cursor\None;
 use Utopia\Feed\Exception\Invalid;
 
 class CursorTest extends TestCase
@@ -108,5 +109,47 @@ class CursorTest extends TestCase
         $this->expectException(Invalid::class);
 
         $cursor->save('', 'invalidator', '1-0');
+    }
+
+    public function testTheNoneStoreRemembersNothing(): void
+    {
+        $cursor = new None();
+
+        $cursor->save('edge', 'invalidator', '1-0');
+
+        $this->assertNull($cursor->load('edge', 'invalidator'), 'Nothing is stored, so nothing comes back');
+    }
+
+    public function testResettingTheNoneStoreIsHarmless(): void
+    {
+        $cursor = new None();
+
+        $cursor->reset('edge', 'invalidator');
+
+        $this->assertNull($cursor->load('edge', 'invalidator'));
+    }
+
+    /**
+     * A stand-in that accepted names a real store rejects would let a bug
+     * through in development and surface it in production instead.
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function unusableNames(): array
+    {
+        return [
+            'no feed' => ['', 'invalidator'],
+            'no consumer' => ['edge', ''],
+        ];
+    }
+
+    /**
+     * @dataProvider unusableNames
+     */
+    public function testTheNoneStoreStillRejectsEmptyNames(string $feed, string $consumer): void
+    {
+        $this->expectException(Invalid::class);
+
+        (new None())->load($feed, $consumer);
     }
 }

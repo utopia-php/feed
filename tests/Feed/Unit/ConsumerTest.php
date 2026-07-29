@@ -11,6 +11,7 @@ use Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
+use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Feed;
 use Utopia\Tests\Unit\Support\FailingCursor;
 
@@ -212,48 +213,86 @@ class ConsumerTest extends TestCase
     }
 
     /**
-     * The store failing must not stop the work: the position is mirrored in
-     * memory, so the run carries on and only a restart before the store
-     * recovers replays anything.
+     * A cursor store that is down surfaces rather than being swallowed: reading
+     * from an unknown position would replay the retained feed, so the run stops
+     * and the caller decides.
      */
-    public function testKeepsWorkingWhenThePositionCannotBeLoaded(): void
+    public function testAPositionThatCannotBeLoadedStopsTheRun(): void
     {
         $this->feed->append('a');
 
         $consumer = $this->consumer(new FailingCursor(onLoad: true));
-        $warnings = [];
-        $consumer->onWarning(function (\Throwable $error, string $context) use (&$warnings): void {
-            $warnings[] = $context;
-        });
+        $seen = [];
 
-        $this->assertSame(['a'], $this->drain($consumer));
-        $this->assertSame(['load'], $warnings);
+        try {
+            $consumer->consume(function (CloudEvent $event) use (&$seen): void {
+                $seen[] = $event->type;
+            });
+            $this->fail('The store failure should have been raised');
+        } catch (Transport $error) {
+            $this->assertSame('Cursor store is unavailable', $error->getMessage());
+        }
+
+        $this->assertSame([], $seen, 'Nothing is handled from a position that could not be read');
     }
 
-    public function testKeepsWorkingWhenThePositionCannotBeSaved(): void
+    /**
+     * The load is retried on the next run rather than being remembered as a
+     * failure, so a store that blips does not leave the consumer stuck.
+     */
+    public function testAFailedLoadIsRetriedOnTheNextRun(): void
+    {
+        $this->feed->append('a');
+
+        $cursor = new class () extends MemoryCursor {
+            public bool $fail = true;
+
+            public function load(string $feed, string $consumer): ?string
+            {
+                if ($this->fail) {
+                    $this->fail = false;
+
+                    throw new Transport('Cursor store is unavailable');
+                }
+
+                return parent::load($feed, $consumer);
+            }
+        };
+
+        $consumer = $this->consumer($cursor);
+
+        try {
+            $consumer->consume(fn (CloudEvent $event) => null);
+        } catch (Transport) {
+            // Expected on the first run.
+        }
+
+        $this->assertSame(['a'], $this->drain($consumer), 'The second run reads the store again');
+    }
+
+    /**
+     * The events were handled, so the failure comes after them: this run keeps
+     * its progress in memory and only a restart replays.
+     */
+    public function testAPositionThatCannotBeSavedIsRaisedAfterTheEventsAreHandled(): void
     {
         $this->feed->append('a');
         $this->feed->append('b');
 
         $consumer = $this->consumer(new FailingCursor(onSave: true));
-        $warnings = [];
-        $consumer->onWarning(function (\Throwable $error, string $context) use (&$warnings): void {
-            $warnings[] = $context;
-        });
+        $seen = [];
 
-        $this->assertSame(['a', 'b'], $this->drain($consumer));
-        $this->assertSame(['save'], $warnings);
+        try {
+            $consumer->consume(function (CloudEvent $event) use (&$seen): void {
+                $seen[] = $event->type;
+            });
+            $this->fail('The store failure should have been raised');
+        } catch (Transport $error) {
+            $this->assertSame('Cursor store is unavailable', $error->getMessage());
+        }
 
-        $this->feed->append('c');
-
-        $this->assertSame(['c'], $this->drain($consumer), 'The in-memory position still moved');
-    }
-
-    public function testSurvivesAFailingStoreWithNoWarningHandler(): void
-    {
-        $this->feed->append('a');
-
-        $this->assertSame(['a'], $this->drain($this->consumer(new FailingCursor(onLoad: true, onSave: true))));
+        $this->assertSame(['a', 'b'], $seen, 'The handler still saw the batch');
+        $this->assertNotNull($consumer->position(), 'The in-memory position still moved');
     }
 
     public function testResetReplaysEverythingStillRetained(): void
@@ -310,7 +349,7 @@ class ConsumerTest extends TestCase
         $this->feed->append('b');
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer(new Feed(new \Utopia\Feed\Journal\Unconfigured('edge')), 'invalidator', $this->cursor);
+        $consumer = new Consumer(new Feed(new \Utopia\Feed\Journal\None('edge')), 'invalidator', $this->cursor);
 
         $this->expectException(\Utopia\Feed\Exception\Unsupported::class);
 

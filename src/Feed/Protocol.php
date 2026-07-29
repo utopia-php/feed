@@ -18,7 +18,7 @@ use Utopia\Feed\Exception\Invalid;
  *
  * ```php
  * // Producer, in whatever routing layer it uses:
- * $limit = Feed::limit((int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH));
+ * $limit = \min((int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH), Feed::MAX_BATCH);
  *
  * $events = $feed->poll(
  *     $request->getParam(Protocol::PARAM_LAST_EVENT_ID) ?: null,
@@ -185,7 +185,7 @@ final class Protocol
      *
      * @param int $count Events being returned.
      * @param int $limit Events the batch was built with, after {@see
-     *        Feed::limit()} has clamped what the consumer asked for.
+     *        Feed::MAX_BATCH} has capped what the consumer asked for.
      * @param bool $public Whether a shared cache may store the batch. Off by
      *        default: feeds are usually served behind authorization, and
      *        `public` there would let a CDN hand one consumer's events to a

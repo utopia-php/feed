@@ -128,7 +128,7 @@ use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
 
 // GET /v1/feeds/:feedId
-$limit = Feed::limit((int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH));
+$limit = \min((int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH), Feed::MAX_BATCH);
 
 $events = $feed->poll(
     $request->getParam(Protocol::PARAM_LAST_EVENT_ID) ?: null,
@@ -141,8 +141,9 @@ $response
     ->json(Protocol::encode($events));
 ```
 
-`Feed::limit()` clamps what the consumer asked for to what a read will actually
-return, so the same number reaches `cacheControl()`. A full batch is settled
+Cap the limit yourself with `Feed::MAX_BATCH` before the call, so the number
+that reaches `cacheControl()` is the one the batch was actually built with — a
+read never returns more than that cap anyway. A full batch is settled
 history and is marked cacheable; a short one is the live end of the feed and is
 marked `no-store`. Caching is `private` unless you pass `public: true`.
 
@@ -178,11 +179,17 @@ returns the events after a given id; everything else sits above it.
 | `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ | ✅ |
 | `Journal\Http` | Consuming another service's feed | ❌ | ✅ |
 | `Journal\Memory` | Tests and single-process development | ✅ | ✅ |
-| `Journal\Unconfigured` | No backend configured — throws on use | ❌ | ❌ |
+| `Journal\None` | No backend configured — throws on use | ❌ | ❌ |
 
 `Journal\Pool` is what most services producing a feed want: a long poll holds its
 connection for the whole timeout, so reading through a shared client would block
 every other user of it.
+
+`Journal\None` throws on every operation rather than doing nothing, so a
+misconfigured service fails at the point of use instead of silently dropping
+events. `Cursor\None` is the opposite — it is a no-op, because a position that
+goes nowhere only costs a replay, while an append that goes nowhere loses
+events.
 
 ## Cursors
 
@@ -195,14 +202,19 @@ consumer name, so a single store serves every feed a service consumes:
 | `Cursor\Redis` | A consumer running inside the producer, with no store of its own |
 | `Cursor\Pool` | The same, over a pooled connection |
 | `Cursor\Memory` | Tests, or a consumer that should replay from the beginning on every restart |
+| `Cursor\None` | No store configured — remembers nothing, so a restart replays |
 
 The store is allowed to be lossy: a lost position costs a replay, not a gap. A
-store that is down is a warning rather than a failure — the consumer keeps its
-position in memory and carries on. Pass `onWarning()` to hear about it:
+store that is *down* is a different matter — the failure surfaces from
+`consume()` as a `Transport` exception rather than being swallowed, so catch it
+in your loop if the consumer should keep trying:
 
 ```php
-$consumer->onWarning(fn (\Throwable $error, string $context) =>
-    Console::warning("[feed] Could not {$context} the cursor: {$error->getMessage()}"));
+try {
+    $consumer->consume($handler);
+} catch (Transport $error) {
+    Console::warning("[feed] {$error->getMessage()}");
+}
 ```
 
 Run **one process per consumer name.** Two sharing a name share one position, so

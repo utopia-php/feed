@@ -6,7 +6,7 @@ namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Journal\Memory;
-use Utopia\Feed\Journal\Unconfigured;
+use Utopia\Feed\Journal\None;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
@@ -140,19 +140,6 @@ class FeedTest extends TestCase
         $this->assertCount(1, $this->feed->read(null, Feed::MAX_BATCH * 10));
         $this->assertCount(1, $this->feed->read(null, 0));
         $this->assertCount(1, $this->feed->read(null, -5));
-    }
-
-    /**
-     * An endpoint serving this feed clamps with the same helper, so the limit
-     * it passes to `Protocol::cacheControl()` is the one the batch was built
-     * with.
-     */
-    public function testExposesTheLimitAReadWillActuallyUse(): void
-    {
-        $this->assertSame(50, Feed::limit(50));
-        $this->assertSame(Feed::MAX_BATCH, Feed::limit(Feed::MAX_BATCH * 10));
-        $this->assertSame(1, Feed::limit(0));
-        $this->assertSame(1, Feed::limit(-5));
     }
 
     public function testRejectsAPositionThatIsNotAFeedId(): void
@@ -370,18 +357,18 @@ class FeedTest extends TestCase
         $this->assertSame('edge', $this->feed->getName());
     }
 
-    public function testAnUnconfiguredBackendFailsLoudlyRatherThanDroppingEvents(): void
+    public function testAFeedWithNoBackendFailsLoudlyRatherThanDroppingEvents(): void
     {
-        $feed = new Feed(new Unconfigured('edge'), 'urn:appwrite:cloud:fra');
+        $feed = new Feed(new None('edge'), 'urn:appwrite:cloud:fra');
 
         $this->expectException(Unsupported::class);
 
         $feed->append('test');
     }
 
-    public function testAnUnconfiguredBackendCannotBeRead(): void
+    public function testAFeedWithNoBackendCannotBeRead(): void
     {
-        $feed = new Feed(new Unconfigured('edge'));
+        $feed = new Feed(new None('edge'));
 
         $this->expectException(Unsupported::class);
 
@@ -393,31 +380,6 @@ class FeedTest extends TestCase
         $this->expectException(Invalid::class);
 
         new Memory('');
-    }
-
-    /**
-     * @return array<string, array{int}>
-     */
-    public static function unusableRetention(): array
-    {
-        return [
-            'zero' => [0],
-            'negative' => [-5],
-        ];
-    }
-
-    /**
-     * Backends disagree about what a non-positive cap means — some keep
-     * nothing, some keep everything — so it is refused at construction rather
-     * than resolved one way in a test and the other way in production.
-     *
-     * @dataProvider unusableRetention
-     */
-    public function testRejectsARetentionCapThatWouldNotBoundTheFeed(int $maxSize): void
-    {
-        $this->expectException(Invalid::class);
-
-        new Memory('edge', maxSize: $maxSize);
     }
 
     public function testAcceptsTheSmallestUsefulRetentionCap(): void

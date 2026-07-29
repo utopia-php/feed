@@ -6,9 +6,7 @@ namespace Utopia\Feed;
 
 use Utopia\Feed\Exception\Invalid;
 
-/**
- * Client class: Remember position of feed that has already been consumed.
- */
+// Client class: Remember position of feed that has already been consumed
 abstract class Cursor
 {
     /**
