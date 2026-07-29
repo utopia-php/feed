@@ -322,7 +322,7 @@ class RedisTest extends TestCase
             $cursor->save('invalidator', $position);
         }
 
-        $this->assertSame('stream', $this->redis->type($key));
+        $this->assertSame(\Redis::REDIS_STREAM, $this->redis->type($key));
         $this->assertSame(1, $this->redis->xLen($key), 'MAXLEN 1 keeps only the current position');
     }
 
@@ -343,7 +343,7 @@ class RedisTest extends TestCase
 
         $cursor->save('invalidator', '1690000000000-1');
 
-        $this->assertSame('stream', $this->redis->type($key), 'The key is converted on the next save');
+        $this->assertSame(\Redis::REDIS_STREAM, $this->redis->type($key), 'The key is converted on the next save');
         $this->assertSame('1690000000000-1', $cursor->load('invalidator'), 'No position is lost in the upgrade');
     }
 
@@ -362,6 +362,11 @@ class RedisTest extends TestCase
     {
         (new RedisCursor($this->redis, $this->name))->save('invalidator', '1-0');
 
-        $this->assertSame('1-0', $this->redis->get('feed:' . $this->name . ':cursor:invalidator'));
+        // The position is the entry's id, so this reads the stream rather than
+        // the key's value.
+        $entries = $this->redis->xRevRange('feed:' . $this->name . ':cursor:invalidator', '+', '-', 1);
+
+        $this->assertIsArray($entries);
+        $this->assertSame('1-0', \array_key_first($entries));
     }
 }
