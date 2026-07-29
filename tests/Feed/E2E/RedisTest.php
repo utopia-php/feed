@@ -58,11 +58,24 @@ class RedisTest extends TestCase
         return new Producer(new RedisJournal($this->redis, $this->name, $maxSize), 'urn:test:e2e');
     }
 
+    /**
+     * The two halves of one feed: what a producing service builds over a single
+     * journal to append to its feed and serve it.
+     *
+     * @return array{Producer, Feed}
+     */
+    private function feedAndProducer(int $maxSize = 100_000): array
+    {
+        $journal = new RedisJournal($this->redis, $this->name, $maxSize);
+
+        return [new Producer($journal, 'urn:test:e2e'), new Feed($journal)];
+    }
+
     public function testAppendsAndReadsBack(): void
     {
-        $feed = $this->feed();
+        [$producer, $feed] = $this->feedAndProducer();
 
-        $id = $feed->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
+        $id = $producer->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
 
         $events = $feed->read();
 
@@ -84,11 +97,11 @@ class RedisTest extends TestCase
 
     public function testIdsIncreaseAcrossRapidAppends(): void
     {
-        $feed = $this->feed();
+        [$producer, $feed] = $this->feedAndProducer();
 
         $ids = [];
         for ($i = 0; $i < 100; $i++) {
-            $ids[] = $feed->append('test');
+            $ids[] = $producer->append('test');
         }
 
         $this->assertSame($ids, \array_unique($ids));
@@ -105,10 +118,10 @@ class RedisTest extends TestCase
      */
     public function testReadsStrictlyAfterAPosition(): void
     {
-        $feed = $this->feed();
+        [$producer, $feed] = $this->feedAndProducer();
 
-        $first = $feed->append('a');
-        $second = $feed->append('b');
+        $first = $producer->append('a');
+        $second = $producer->append('b');
 
         $events = $feed->read($first);
 
@@ -162,10 +175,10 @@ class RedisTest extends TestCase
 
     public function testHonoursTheLimit(): void
     {
-        $feed = $this->feed();
+        [$producer, $feed] = $this->feedAndProducer();
 
         foreach (\range(1, 10) as $i) {
-            $feed->append('test');
+            $producer->append('test');
         }
 
         $this->assertCount(3, $feed->read(null, 3));
@@ -185,13 +198,12 @@ class RedisTest extends TestCase
      */
     public function testAPositionBelowTheTrimHorizonReadsWhatIsLeft(): void
     {
-        $feed = $this->feed(maxSize: 10);
-        $producer = $this->producer(maxSize: 10);
+        [$producer, $feed] = $this->feedAndProducer(maxSize: 10);
 
-        $first = $feed->append('first');
+        $first = $producer->append('first');
 
         foreach (\range(1, 500) as $i) {
-            $feed->append('event-' . $i);
+            $producer->append('event-' . $i);
         }
 
         $events = $feed->read($first);
@@ -202,8 +214,8 @@ class RedisTest extends TestCase
 
     public function testLongPollingReturnsAsSoonAsTheFeedHasSomething(): void
     {
-        $feed = $this->feed();
-        $feed->append('a');
+        [$producer, $feed] = $this->feedAndProducer();
+        $producer->append('a');
 
         $started = \microtime(true);
         $events = $feed->poll(null, 10, 3000);
@@ -223,11 +235,11 @@ class RedisTest extends TestCase
 
     public function testConsumesThroughAPersistedCursor(): void
     {
-        $feed = $this->feed();
+        [$producer, $feed] = $this->feedAndProducer();
         $cursor = new RedisCursor($this->redis);
 
-        $feed->append('a');
-        $last = $feed->append('b');
+        $producer->append('a');
+        $last = $producer->append('b');
 
         $seen = [];
         $handler = function (CloudEvent $event) use (&$seen): void {
@@ -245,10 +257,10 @@ class RedisTest extends TestCase
 
     public function testASecondConsumerOfTheSameFeedGetsItsOwnPosition(): void
     {
-        $feed = $this->feed();
+        [$producer, $feed] = $this->feedAndProducer();
         $cursor = new RedisCursor($this->redis);
 
-        $feed->append('a');
+        $producer->append('a');
 
         $this->assertSame(1, (new Consumer($feed, 'one', $cursor))->consume(fn (CloudEvent $e) => null));
         $this->assertSame(1, (new Consumer($feed, 'two', $cursor))->consume(fn (CloudEvent $e) => null));
@@ -256,11 +268,11 @@ class RedisTest extends TestCase
 
     public function testResetReplaysTheRetainedFeed(): void
     {
-        $feed = $this->feed();
+        [$producer, $feed] = $this->feedAndProducer();
         $cursor = new RedisCursor($this->redis);
 
-        $feed->append('a');
-        $feed->append('b');
+        $producer->append('a');
+        $producer->append('b');
 
         $consumer = new Consumer($feed, 'invalidator', $cursor);
         $consumer->consume(fn (CloudEvent $e) => null);

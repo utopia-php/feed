@@ -4,11 +4,14 @@
 
 Initial release.
 
-- `Feed` — append, read and long-poll an ordered event log
+- `Producer` — appends events to a feed this service owns
+- `Feed` — reads and long-polls a feed, local or remote
 - Events are [utopia-php/cloudevents](https://github.com/utopia-php/cloudevents)
   `CloudEvent` objects — this library defines no event type of its own, so a feed
   event is accepted anywhere a `CloudEvent` is, and `dataschema` and extension
   attributes survive an append and a read
+- `Appendable` — the journals that own their events and can be appended to;
+  `Journal\Http` deliberately does not implement it
 - `Journal\Redis`, `Journal\Pool` — Redis streams, directly or over a pool
 - `Journal\Http` — another service's feed, read over the wire with
   [utopia-php/client](https://github.com/utopia-php/client); takes any of its

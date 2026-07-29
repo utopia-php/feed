@@ -20,7 +20,7 @@ final class Protocol
 
     public const string CACHE_IMMUTABLE = 'max-age=31536000';
     public const string CACHE_NONE = 'no-store';
-    
+
     public const int TIMEOUT_MARGIN = 10_000;
 
     /**

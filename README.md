@@ -33,15 +33,15 @@ composer require utopia-php/feed
 ### Produce
 
 ```php
-use Utopia\Feed\Feed;
 use Utopia\Feed\Journal;
+use Utopia\Feed\Producer;
 
-$feed = new Feed(
+$producer = new Producer(
     new Journal\Redis($redis, 'edge'),
     source: 'urn:appwrite:cloud:fra',
 );
 
-$id = $feed->append(
+$id = $producer->append(
     type: 'io.appwrite.edge.invalidate-rule',
     data: ['tags' => ['domain' => 'example.com']],
     subject: 'example.com',
@@ -50,11 +50,11 @@ $id = $feed->append(
 
 `append()` returns the event's id, which is its position in the feed.
 
-Subclass `Feed` to give it a typed vocabulary, so callers cannot invent an event
-type or misspell a payload key:
+Subclass `Producer` to give it a typed vocabulary, so callers cannot invent an
+event type or misspell a payload key:
 
 ```php
-class EdgeFeed extends Feed
+class EdgeProducer extends Producer
 {
     public function invalidateRule(string $domain): string
     {
@@ -66,6 +66,10 @@ class EdgeFeed extends Feed
     }
 }
 ```
+
+`Producer` only accepts a journal that owns its events (one implementing
+`Appendable`), so pointing it at a remote feed is a type error rather than a
+runtime surprise.
 
 ### Consume
 
@@ -123,9 +127,13 @@ retry.
 `Protocol` holds the wire contract — query parameters, response body, caching
 rules — and deals in arrays, so it fits whichever HTTP layer you use:
 
+The feed a service serves is the read half of the same journal it appends to:
+
 ```php
 use Utopia\Feed\Feed;
 use Utopia\Feed\Protocol;
+
+$feed = new Feed($journal);   // the same journal the Producer was built on
 
 // GET /v1/feeds/:feedId
 $limit = \min((int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH), Feed::MAX_BATCH);
@@ -170,16 +178,16 @@ an attribute or moves the spec forward must not stop a consumer that predates it
 
 ## Journals
 
-A journal is where a feed's events live. It assigns an ordered id on append and
-returns the events after a given id; everything else sits above it.
+A journal is where a feed's events live. It returns the events after a given id;
+the ones that own their events also implement `Appendable` and assign the ids.
 
-| Journal | Use for | Append | Read |
-| --- | --- | --- | --- |
-| `Journal\Redis` | Producing a feed on a Redis stream | ✅ | ✅ |
-| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ | ✅ |
-| `Journal\Http` | Consuming another service's feed | ❌ | ✅ |
-| `Journal\Memory` | Tests and single-process development | ✅ | ✅ |
-| `Journal\None` | No backend configured — throws on use | ❌ | ❌ |
+| Journal | Use for | `Appendable` |
+| --- | --- | --- |
+| `Journal\Redis` | Producing a feed on a Redis stream | ✅ |
+| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ |
+| `Journal\Http` | Consuming another service's feed | ❌ — it belongs to whoever appends to it |
+| `Journal\Memory` | Tests and single-process development | ✅ |
+| `Journal\None` | No backend configured — throws on use | ✅, and throws |
 
 `Journal\Pool` is what most services producing a feed want: a long poll holds its
 connection for the whole timeout, so reading through a shared client would block
