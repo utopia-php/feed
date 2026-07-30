@@ -166,7 +166,7 @@ objects — this library defines no event type of its own:
 ```php
 $consumer->consume(function (CloudEvent $event) {
     $tags = $event->data['tags'] ?? [];
-    $trace = $event->getExtension('traceparent');
+    $trace = $event->extensions['traceparent'] ?? null;
 });
 ```
 

@@ -45,6 +45,7 @@ class ProducerTest extends TestCase
         $event = $this->feed->read()[0];
 
         $this->assertSame('urn:appwrite:cloud:fra', $event->source);
+        $this->assertNotNull($event->time);
         $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/', $event->time);
     }
 
@@ -65,7 +66,7 @@ class ProducerTest extends TestCase
 
     public function testPublishStampsAPreparedEvent(): void
     {
-        $id = $this->producer->publish(new CloudEvent(id: 'ignored', type: 'test', data: ['a' => 'b'], subject: 's'));
+        $id = $this->producer->publish(new CloudEvent(id: 'ignored', type: 'test', source: 'ignored', data: ['a' => 'b'], subject: 's'));
 
         $event = $this->feed->read()[0];
 
@@ -77,7 +78,7 @@ class ProducerTest extends TestCase
 
     public function testPublishKeepsATimeTheCallerSet(): void
     {
-        $this->producer->publish(new CloudEvent(id: '', type: 'test', time: '2020-01-01T00:00:00.000Z'));
+        $this->producer->publish(new CloudEvent(id: '', type: 'test', source: '', time: '2020-01-01T00:00:00.000Z'));
 
         $this->assertSame('2020-01-01T00:00:00.000Z', $this->feed->read()[0]->time);
     }

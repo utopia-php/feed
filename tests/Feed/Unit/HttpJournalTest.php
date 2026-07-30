@@ -34,8 +34,8 @@ class HttpJournalTest extends TestCase
     public function testReadsAFeedOverHttp(): void
     {
         [$feed] = $this->feed([FakeTransport::json(Protocol::encode([
-            new CloudEvent(id: '1-0', type: 'io.appwrite.edge.invalidate-rule', data: ['tags' => ['domain' => 'example.com']]),
-            new CloudEvent(id: '1-1', type: 'io.appwrite.edge.invalidate'),
+            new CloudEvent(id: '1-0', type: 'io.appwrite.edge.invalidate-rule', source: 'urn:test', data: ['tags' => ['domain' => 'example.com']]),
+            new CloudEvent(id: '1-1', type: 'io.appwrite.edge.invalidate', source: 'urn:test'),
         ]))]);
 
         $events = $feed->read();
@@ -225,7 +225,7 @@ class HttpJournalTest extends TestCase
      */
     public function testWorksThroughTheClientItself(): void
     {
-        $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-0', type: 'a')]))]);
+        $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-0', type: 'a', source: 'urn:test')]))]);
 
         $client = (new Client($transport))->withHeaders(['x-appwrite-jwt' => 'token']);
         $feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
@@ -244,10 +244,10 @@ class HttpJournalTest extends TestCase
     {
         [$feed, $transport] = $this->feed([
             FakeTransport::json(Protocol::encode([
-                new CloudEvent(id: '1-0', type: 'a'),
-                new CloudEvent(id: '1-1', type: 'b'),
+                new CloudEvent(id: '1-0', type: 'a', source: 'urn:test'),
+                new CloudEvent(id: '1-1', type: 'b', source: 'urn:test'),
             ])),
-            FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-2', type: 'c')])),
+            FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-2', type: 'c', source: 'urn:test')])),
             FakeTransport::json(Protocol::encode([])),
         ]);
 

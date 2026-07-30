@@ -42,7 +42,7 @@
         "utopia-php/client": "^0.2",
         "utopia-php/pools": "1.*",
         "utopia-php/psr7": "^0.2",
-        "utopia-php/cloudevents": "dev-feat-cloudevents-g2"
+        "utopia-php/cloudevents": "dev-feat-constructor-validation"
     },
     "require-dev": {
         "laravel/pint": "^1.21",

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "47e874a6ca9e914a88ab31627d42e31b",
+    "content-hash": "64da6e0642c2891229b50497a4cfef29",
     "packages": [
         {
             "name": "brick/math",
@@ -2052,16 +2052,16 @@
         },
         {
             "name": "utopia-php/cloudevents",
-            "version": "dev-feat-cloudevents-g2",
+            "version": "dev-feat-constructor-validation",
             "source": {
                 "type": "git",
                 "url": "https://github.com/utopia-php/cloudevents.git",
-                "reference": "68cd50590b94e250970f226a0067caf471adf42e"
+                "reference": "8a89ab2365a70919f2e9a4c3742c28ac9020fb57"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/utopia-php/cloudevents/zipball/68cd50590b94e250970f226a0067caf471adf42e",
-                "reference": "68cd50590b94e250970f226a0067caf471adf42e",
+                "url": "https://api.github.com/repos/utopia-php/cloudevents/zipball/8a89ab2365a70919f2e9a4c3742c28ac9020fb57",
+                "reference": "8a89ab2365a70919f2e9a4c3742c28ac9020fb57",
                 "shasum": ""
             },
             "require": {
@@ -2098,9 +2098,9 @@
             ],
             "support": {
                 "issues": "https://github.com/utopia-php/cloudevents/issues",
-                "source": "https://github.com/utopia-php/cloudevents/tree/feat-cloudevents-g2"
+                "source": "https://github.com/utopia-php/cloudevents/tree/feat-constructor-validation"
             },
-            "time": "2026-07-29T13:53:17+00:00"
+            "time": "2026-07-30T11:07:39+00:00"
         },
         {
             "name": "utopia-php/pools",

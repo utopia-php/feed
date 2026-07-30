@@ -85,7 +85,7 @@ class RedisTest extends TestCase
         $this->assertSame('example.com', $events[0]->subject);
         $this->assertSame('urn:test:e2e', $events[0]->source);
         $this->assertSame(['tags' => ['domain' => 'example.com']], $events[0]->data);
-        $this->assertNotSame('', $events[0]->time);
+        $this->assertNotNull($events[0]->time);
     }
 
     public function testStreamIdsMatchTheFormatPositionsAreParsedWith(): void
@@ -135,6 +135,7 @@ class RedisTest extends TestCase
         $this->producer()->publish(new CloudEvent(
             id: '',
             type: 'test',
+            source: '',
             dataschema: 'https://example.com/schema.json',
             extensions: ['traceparent' => '00-abc-def-01'],
         ));
@@ -142,7 +143,7 @@ class RedisTest extends TestCase
         $event = $this->feed()->read()[0];
 
         $this->assertSame('https://example.com/schema.json', $event->dataschema);
-        $this->assertSame('00-abc-def-01', $event->getExtension('traceparent'));
+        $this->assertSame('00-abc-def-01', $event->extensions['traceparent']);
     }
 
     public function testAnAbsentSubjectStaysAbsent(): void

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Utopia\Feed;
 
 use Utopia\CloudEvents\CloudEvent;
-use Utopia\CloudEvents\Exception as CloudEventsException;
 use Utopia\Feed\Exception\Invalid;
 
 // Server class: durable storage for the events — Journal\Redis, Pool, Memory.
@@ -58,14 +57,14 @@ abstract class Journal
         return [
             'type' => $event->type,
             'source' => $event->source,
-            // CloudEvents models an absent subject and dataschema as null, and
-            // a backend field cannot hold one, so both are normalized here and
-            // read back as absent in decode().
+            // CloudEvents models an absent subject, dataschema and time as
+            // null, and a backend field cannot hold one, so they are
+            // normalized here and read back as absent in decode().
             'subject' => $event->subject ?? '',
             'dataschema' => $event->dataschema ?? '',
-            'time' => $event->time,
+            'time' => $event->time ?? '',
             'data' => self::json($event->data, 'data'),
-            'extensions' => self::json($event->getExtensions(), 'extensions'),
+            'extensions' => self::json($event->extensions, 'extensions'),
         ];
     }
 
@@ -75,15 +74,14 @@ abstract class Journal
         $extensions = \json_decode(self::field($fields, 'extensions'), true);
 
         $event = [
-            'specversion' => CloudEvent::SPECVERSION,
+            'specversion' => '1.0',
             'id' => $id,
             'type' => self::field($fields, 'type'),
             'source' => self::field($fields, 'source'),
-            'time' => self::field($fields, 'time'),
             'data' => \json_decode(self::field($fields, 'data'), true),
         ];
 
-        foreach (['subject', 'dataschema'] as $optional) {
+        foreach (['subject', 'dataschema', 'time'] as $optional) {
             $value = self::field($fields, $optional);
 
             if ($value !== '') {
@@ -94,8 +92,11 @@ abstract class Journal
         $event += \is_array($extensions) ? $extensions : [];
 
         try {
-            return CloudEvent::fromArray($event, lenient: true);
-        } catch (CloudEventsException $error) {
+            // The docblock wants array<string, mixed>, but a digit-only
+            // extension name — legal per the spec — is an integer key in PHP.
+            // @phpstan-ignore argument.type
+            return CloudEvent::fromArray($event);
+        } catch (\InvalidArgumentException $error) {
             throw new Invalid("Feed entry {$id} could not be read as an event: {$error->getMessage()}", previous: $error);
         }
     }

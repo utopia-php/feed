@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Utopia\Feed;
 
 use Utopia\CloudEvents\CloudEvent;
-use Utopia\CloudEvents\Exception as CloudEventsException;
 use Utopia\Feed\Exception\Invalid;
 
 // HTTP shape of a feed, as defined by https://www.http-feeds.org/.
@@ -22,6 +21,19 @@ final class Protocol
     public const string CACHE_NONE = 'no-store';
 
     public const int TIMEOUT_MARGIN = 10_000;
+
+    /** The context attributes this library models; the rest are extensions. */
+    private const array ATTRIBUTES = [
+        'specversion',
+        'type',
+        'source',
+        'id',
+        'subject',
+        'time',
+        'datacontenttype',
+        'dataschema',
+        'data',
+    ];
 
     /**
      * @return array<string, string|int>
@@ -95,7 +107,7 @@ final class Protocol
                 }
 
                 $events[] = self::event($event);
-            } catch (Invalid | CloudEventsException $error) {
+            } catch (Invalid | \InvalidArgumentException $error) {
                 if ($events === []) {
                     throw $error instanceof Invalid
                         ? $error
@@ -119,16 +131,65 @@ final class Protocol
     }
 
     /**
+     * Read one event off the wire.
+     *
+     * Mapped by hand rather than through CloudEvent::fromArray(), which
+     * rejects a specversion it does not know. A feed is read by consumers
+     * older than its producer by design, so a producer that moved the spec
+     * version forward, or attached an attribute this library cannot model,
+     * must not stop one that predates it — what cannot be carried is dropped,
+     * not fatal.
+     *
      * @param array<array-key, mixed> $raw
      */
     private static function event(array $raw): CloudEvent
     {
-        $event = CloudEvent::fromArray($raw, lenient: true, allowUnknownSpecversion: true);
-
-        if ($event->id === '') {
-            throw new Invalid('Feed event is missing an id');
+        foreach (['specversion', 'id', 'type', 'source'] as $required) {
+            if (!isset($raw[$required]) || !\is_string($raw[$required]) || $raw[$required] === '') {
+                throw new Invalid('Feed event is missing ' . ($required === 'id' ? 'an id' : 'a ' . $required));
+            }
         }
 
-        return $event;
+        $extensions = [];
+
+        /** @var mixed $value */
+        foreach ($raw as $name => $value) {
+            if (\in_array($name, self::ATTRIBUTES, true)) {
+                continue;
+            }
+
+            // Only what the CloudEvent constructor accepts as an extension —
+            // anything else would throw and stop the feed.
+            if (\preg_match('/^[a-z0-9]+$/', (string) $name) === 1
+                && (\is_bool($value) || \is_int($value) || \is_string($value))) {
+                $extensions[$name] = $value;
+            }
+        }
+
+        return new CloudEvent(
+            type: $raw['type'],
+            source: $raw['source'],
+            id: $raw['id'],
+            specversion: $raw['specversion'],
+            subject: self::optional($raw, 'subject'),
+            time: self::optional($raw, 'time'),
+            datacontenttype: self::optional($raw, 'datacontenttype'),
+            data: $raw['data'] ?? null,
+            dataschema: self::optional($raw, 'dataschema'),
+            // The docblock wants array<string, mixed>, but a digit-only
+            // extension name — legal per the spec — is an integer key in PHP.
+            // @phpstan-ignore argument.type
+            extensions: $extensions,
+        );
+    }
+
+    /**
+     * @param array<array-key, mixed> $raw
+     */
+    private static function optional(array $raw, string $attribute): ?string
+    {
+        $value = $raw[$attribute] ?? null;
+
+        return \is_string($value) && $value !== '' ? $value : null;
     }
 }

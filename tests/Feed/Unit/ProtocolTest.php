@@ -31,7 +31,7 @@ class ProtocolTest extends TestCase
     {
         $payload = Protocol::encode([
             new CloudEvent(id: '1-0', type: 'a', data: ['x' => 1], source: 'urn:test', subject: 's', time: 't'),
-            new CloudEvent(id: '1-1', type: 'b'),
+            new CloudEvent(id: '1-1', type: 'b', source: 'urn:test'),
         ]);
 
         $this->assertSame(2, $payload['total']);
@@ -50,7 +50,7 @@ class ProtocolTest extends TestCase
     {
         $events = [
             new CloudEvent(id: '1-0', type: 'a', data: ['x' => 1], source: 'urn:test', subject: 's', time: 't'),
-            new CloudEvent(id: '1-1', type: 'b'),
+            new CloudEvent(id: '1-1', type: 'b', source: 'urn:test'),
         ];
 
         $this->assertEquals($events, Protocol::decode(Protocol::encode($events)));
@@ -194,7 +194,7 @@ class ProtocolTest extends TestCase
 
         $this->assertCount(1, $events);
         $this->assertSame('1.1', $events[0]->specversion);
-        $this->assertSame('00-abc-def-01', $events[0]->getExtension('traceparent'));
+        $this->assertSame('00-abc-def-01', $events[0]->extensions['traceparent']);
     }
 
     /**

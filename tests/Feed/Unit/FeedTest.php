@@ -131,13 +131,14 @@ class FeedTest extends TestCase
         $this->producer->publish(new CloudEvent(
             id: '',
             type: 'test',
+            source: '',
             extensions: ['traceparent' => '00-abc-def-01', 'retrycount' => 2],
         ));
 
         $event = $this->feed->read()[0];
 
-        $this->assertSame('00-abc-def-01', $event->getExtension('traceparent'));
-        $this->assertSame(2, $event->getExtension('retrycount'));
+        $this->assertSame('00-abc-def-01', $event->extensions['traceparent']);
+        $this->assertSame(2, $event->extensions['retrycount']);
     }
 
     /**
@@ -151,13 +152,16 @@ class FeedTest extends TestCase
         $this->producer->publish(new CloudEvent(
             id: '',
             type: 'test',
+            source: '',
+            // @phpstan-ignore argument.type ('123' is an integer key in PHP)
             extensions: ['123' => 'digits', 'trace' => 'ok'],
         ));
 
         $event = $this->feed->read()[0];
 
-        $this->assertSame('digits', $event->getExtension('123'));
-        $this->assertSame('ok', $event->getExtension('trace'));
+        // @phpstan-ignore offsetAccess.notFound
+        $this->assertSame('digits', $event->extensions['123']);
+        $this->assertSame('ok', $event->extensions['trace']);
     }
 
     public function testDataschemaSurvivesAppendAndRead(): void
@@ -165,6 +169,7 @@ class FeedTest extends TestCase
         $this->producer->publish(new CloudEvent(
             id: '',
             type: 'test',
+            source: '',
             dataschema: 'https://example.com/schema.json',
         ));
 
