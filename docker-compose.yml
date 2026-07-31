@@ -1,8 +1,5 @@
 name: feed
 
-# Pick the PHP version with an environment variable rather than a per-version
-# file, so testing against a new release is `PHP_VERSION=8.6 docker compose up`
-# and adding it to CI is one line in .github/workflows/tests.yml.
 services:
   tests:
     container_name: feed-tests

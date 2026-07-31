@@ -155,12 +155,10 @@ consumer that must not act on the backlog — a notifier announcing events as
 they happen — opts into starting at the tip:
 
 ```php
-use Utopia\Feed\Start;
-
-$consumer = new Consumer($client, $cursor, name: 'notifier', feed: 'edge', timeout: 20_000, start: Start::Tip);
+$consumer = new Consumer($client, $cursor, name: 'notifier', feed: 'edge', timeout: 20_000, start: Consumer::START_TIP);
 ```
 
-A stored position always wins; `Start::Tip` applies only on the first run or
+A stored position always wins; `Consumer::START_TIP` applies only on the first run or
 after `reset()` (which then means "forget everything, resume from now"). Give
 a tip consumer a `timeout`: the producer anchors "now" as each poll arrives,
 so new events land inside the held request rather than in the gap between
@@ -170,7 +168,7 @@ fails with a 4xx `Transport` error rather than silently replaying the backlog.
 ### Moving the position by hand
 
 - `reset()` — forget the position; the next run starts from the oldest
-  retained event (or the tip, for a `Start::Tip` consumer).
+  retained event (or the tip, for a `Consumer::START_TIP` consumer).
 - `seek($eventId)` — treat `$eventId` as the last event handled; the next run
   starts strictly *after* it. Persisted immediately; a store failure surfaces
   as `Transport`. The id must be well formed but need not still exist in the
@@ -211,7 +209,7 @@ intentionally: a feed is ordered, and stepping over a failure would apply
 later events on top of state that was never updated.
 
 **No position means the oldest retained event, never the tip** (unless the
-consumer opted into `Start::Tip`), so a consumer deployed after the producer
+consumer opted into `Consumer::START_TIP`), so a consumer deployed after the producer
 drains the backlog instead of dropping it.
 
 **One process per consumer name.** Two processes sharing a name share one

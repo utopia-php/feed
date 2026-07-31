@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - **Breaking (the three classes):** the library is now three main classes.
   `Producer` writes events to a feed with `produce()` (formerly `append()`;

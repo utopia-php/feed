@@ -23,9 +23,6 @@ class Pool extends Store implements Appendable
         parent::__construct($name, $pollInterval);
     }
 
-    // The interval only matters in this class's own inherited poll() loop —
-    // the inner store lives for a single read — but it is passed through so
-    // a future change to the inner store cannot silently drop it.
     private function inner(\Redis|\RedisCluster $redis): Redis
     {
         return new Redis($redis, $this->name, $this->maxSize, $this->pollInterval);

@@ -7,18 +7,10 @@ namespace Utopia\Feed;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 
-// Server class: durable storage for the events — Store\Redis, Cache, Pool, Memory.
-// A store owns its events, so every store also implements Appendable;
-// reading another service's feed over the wire is Remote's job.
 abstract class Store implements Readable
 {
     protected const int POLL_INTERVAL = 500; // ms
 
-    /**
-     * @param int $pollInterval How long poll() sleeps between reads, in
-     *        milliseconds. Shorter lowers long-poll latency and raises the
-     *        backend read rate.
-     */
     public function __construct(
         protected readonly string $name,
         protected readonly int $pollInterval = self::POLL_INTERVAL,
@@ -27,8 +19,6 @@ abstract class Store implements Readable
             throw new Invalid('Feed name is required');
         }
 
-        // A zero interval is a busy-spin against the backend; clamping
-        // silently would hide the misconfiguration.
         if ($pollInterval < 1) {
             throw new Invalid('Feed poll interval must be at least 1 millisecond');
         }
@@ -44,29 +34,16 @@ abstract class Store implements Readable
 
     abstract public function tip(): ?string;
 
-    /**
-     * Resolve the tip sentinel into a concrete position: the newest id at the
-     * moment of the call, or null on an empty feed — which reads as "the
-     * beginning of future events". The sentinel is resolved here, before any
-     * id arithmetic; Id itself keeps rejecting it.
-     */
     protected function resolve(?string $lastEventId): ?string
     {
         return $lastEventId === Protocol::TIP ? $this->tip() : $lastEventId;
     }
 
     /**
-     * Wait for events, re-reading on an interval until some land or the
-     * deadline passes. (Remote does not share this loop: there the producer
-     * does the waiting, so a poll is one held request.)
-     *
      * @return list<CloudEvent>
      */
     public function poll(?string $lastEventId, int $limit, int $timeout): array
     {
-        // The sentinel is pinned once, before the wait: re-resolving on every
-        // read would move the tip past events landing mid-poll, and they
-        // would never be delivered.
         $lastEventId = $this->resolve($lastEventId);
 
         $deadline = \microtime(true) + $timeout / 1000;
@@ -80,8 +57,6 @@ abstract class Store implements Readable
                 return $events;
             }
 
-            // Never sleep past the deadline: the timeout is honoured to
-            // within scheduler precision, not to within one interval.
             \usleep((int) \min($this->pollInterval * 1000, \ceil($remaining * 1_000_000)));
         }
     }
@@ -92,9 +67,6 @@ abstract class Store implements Readable
         return [
             'type' => $event->type,
             'source' => $event->source,
-            // CloudEvents models an absent subject, dataschema and time as
-            // null, and a backend field cannot hold one, so they are
-            // normalized here and read back as absent in decode().
             'subject' => $event->subject ?? '',
             'dataschema' => $event->dataschema ?? '',
             'time' => $event->time ?? '',
@@ -127,9 +99,6 @@ abstract class Store implements Readable
         $event += \is_array($extensions) ? $extensions : [];
 
         try {
-            // The docblock wants array<string, mixed>, but a digit-only
-            // extension name — legal per the spec — is an integer key in PHP.
-            // @phpstan-ignore argument.type
             return CloudEvent::fromArray($event);
         } catch (\InvalidArgumentException $error) {
             throw new Invalid("Feed entry {$id} could not be read as an event: {$error->getMessage()}", previous: $error);

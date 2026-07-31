@@ -6,15 +6,9 @@ namespace Utopia\Feed;
 
 use Utopia\CloudEvents\CloudEvent;
 
-// Server class: writes events to a feed this service owns.
-// The store must be a Store and Appendable, so a Remote cannot reach this at all.
 class Producer
 {
     /**
-     * @param Store&Appendable $store Where the events live.
-     * @param string $source Who is producing them, as a URI reference
-     *        (`urn:appwrite:cloud:fra`). Stamped onto every event, so a consumer
-     *        merging feeds from several producers can tell them apart.
      * @throws Exception\Invalid When $source is empty.
      */
     public function __construct(
@@ -32,8 +26,6 @@ class Producer
     }
 
     /**
-     * Produce an event and return its position in the feed.
-     *
      * @throws Exception\Invalid When $type is empty or $data cannot be encoded.
      * @throws Exception When the backend rejects the event.
      */
@@ -49,9 +41,6 @@ class Producer
     }
 
     /**
-     * Produce a prepared event, stamping it with this producer's source and,
-     * unless it already has one, the current time.
-     *
      * @throws Exception\Invalid When the event has no type or cannot be encoded.
      * @throws Exception When the backend rejects the event.
      */
@@ -61,9 +50,7 @@ class Producer
             throw new Exception\Invalid('Feed event type is required');
         }
 
-        // Rebuilt attribute by attribute — extensions included — so anything
-        // this library does not model, a dataschema or a traceparent, survives
-        // untouched.
+        // Rebuilt attribute by attribute to have untouched copy
         $event = new CloudEvent(
             type: $event->type,
             source: $this->source,

@@ -14,7 +14,6 @@ use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
-use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FailingCursor;
 use Utopia\Tests\Unit\Support\FakeTransport;
 use Utopia\Tests\Unit\Support\MidPollStore;
@@ -331,7 +330,7 @@ class ConsumerTest extends TestCase
         $this->producer->produce('old-1');
         $this->producer->produce('old-2');
 
-        $consumer = new Consumer($this->store, $this->cursor, 'notifier', start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'notifier', start: Consumer::START_TIP);
 
         $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
         $this->assertNull($this->cursor->load('edge', 'notifier'), 'Skipping the backlog is not progress to commit');
@@ -347,7 +346,7 @@ class ConsumerTest extends TestCase
         (new Producer($store, 'urn:test'))->produce('old');
 
         $cursor = new MemoryCursor();
-        $consumer = new Consumer($store, $cursor, 'notifier', timeout: 5_000, start: Start::Tip);
+        $consumer = new Consumer($store, $cursor, 'notifier', timeout: 5_000, start: Consumer::START_TIP);
 
         $seen = [];
         $count = $consumer->consume(function (CloudEvent $event) use (&$seen): void {
@@ -366,7 +365,7 @@ class ConsumerTest extends TestCase
 
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer($this->store, $this->cursor, 'invalidator', start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'invalidator', start: Consumer::START_TIP);
 
         $this->assertSame(['b'], $this->drain($consumer), 'A restart must not skip the gap');
     }
@@ -377,7 +376,7 @@ class ConsumerTest extends TestCase
         $this->producer->produce('b');
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer($this->store, $this->cursor, 'invalidator', start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'invalidator', start: Consumer::START_TIP);
 
         $this->assertSame(['b'], $this->drain($consumer), 'The stored position still wins before the reset');
 
@@ -388,7 +387,7 @@ class ConsumerTest extends TestCase
 
     public function testTipStartOnAnEmptyFeedWaitsOutTheTimeoutEmpty(): void
     {
-        $consumer = new Consumer($this->store, $this->cursor, 'notifier', timeout: 600, start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'notifier', timeout: 600, start: Consumer::START_TIP);
 
         $started = \microtime(true);
 
@@ -398,7 +397,7 @@ class ConsumerTest extends TestCase
 
     public function testTipStartOnAnEmptyFeedDeliversWhatLandsMidWait(): void
     {
-        $consumer = new Consumer(new MidPollStore('edge'), $this->cursor, 'notifier', timeout: 5_000, start: Start::Tip);
+        $consumer = new Consumer(new MidPollStore('edge'), $this->cursor, 'notifier', timeout: 5_000, start: Consumer::START_TIP);
 
         $seen = [];
         $consumer->consume(function (CloudEvent $event) use (&$seen): void {

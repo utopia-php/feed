@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
-// Server class: the read view over the store a service appends to — it
-// reads, long-polls, and serves the feed over HTTP with serve().
 class Server
 {
     public function __construct(protected readonly Readable $store)
@@ -18,9 +16,6 @@ class Server
     }
 
     /**
-     * The id of the newest event, or null on an empty feed. Local stores
-     * only — a remote feed's producer resolves the tip sentinel instead.
-     *
      * @throws Exception
      */
     public function tip(): ?string
@@ -46,14 +41,8 @@ class Server
     }
 
     /**
-     * Serve one HTTP feed request: the route's raw query-parameter array in,
-     * the batch out. Extracts `lastEventId`, `limit` and `timeout`, coerces
-     * their string values, applies the defaults and clamps to the protocol
-     * limits, so the route never touches the wire vocabulary itself.
-     *
      * @param array<array-key, mixed> $query The request's query parameters, string values included.
-     *
-     * @throws Exception\Invalid When `lastEventId` is present but is neither a feed position nor the tip sentinel — a 400-worthy input.
+     * @throws Exception\Invalid When `lastEventId` is present but is neither a feed position nor the tip sentinel
      */
     public function serve(array $query): Batch
     {

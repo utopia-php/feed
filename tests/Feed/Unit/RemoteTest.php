@@ -17,7 +17,6 @@ use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
 use Utopia\Feed\Remote;
 use Utopia\Feed\Server;
-use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FakeTransport;
 use Utopia\Tests\Unit\Support\FeedServer;
 use Utopia\Tests\Unit\Support\MidPollStore;
@@ -322,7 +321,7 @@ class RemoteTest extends TestCase
         $producer->produce('old');
 
         $endpoint = new FeedServer(new Server($store));
-        $consumer = new Consumer($endpoint, new MemoryCursor(), 'notifier', feed: 'edge', timeout: 5_000, start: Start::Tip);
+        $consumer = new Consumer($endpoint, new MemoryCursor(), 'notifier', feed: 'edge', timeout: 5_000, start: Consumer::START_TIP);
 
         $seen = [];
         $handler = function (CloudEvent $event) use (&$seen): void {

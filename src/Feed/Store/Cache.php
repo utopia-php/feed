@@ -11,17 +11,6 @@ use Utopia\Feed\Id;
 use Utopia\Feed\Appendable;
 use Utopia\Feed\Store;
 
-/**
- * A feed on a Utopia cache — for a producer whose service already carries a
- * cache and does not want another backend for its feed.
- *
- * The whole feed lives under one key, rewritten on every append, so appends
- * are last-writer-wins rather than atomic: run one producing process, or
- * accept that concurrent appends can drop each other. The store may also be
- * evicted as a unit — a consumer then restarts from an empty feed, which
- * costs a replay of nothing, not a gap it can detect. Retention still trims
- * to maxSize; ttl bounds how long an idle feed outlives its last append.
- */
 class Cache extends Store implements Appendable
 {
     public const int TTL = 30 * 24 * 60 * 60; // 30 days
@@ -92,10 +81,6 @@ class Cache extends Store implements Appendable
     }
 
     /**
-     * The stored feed, oldest first. Anything that is not the shape append()
-     * writes — a missing key, a foreign value under it — reads as an empty
-     * feed rather than a fault: a cache is allowed to forget.
-     *
      * @return list<array{id: string, fields: array<array-key, mixed>}>
      */
     private function load(): array

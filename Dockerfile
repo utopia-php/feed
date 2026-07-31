@@ -1,8 +1,3 @@
-# One image for every PHP version the library is tested against. Adding a
-# version is a single entry in the `php-versions` matrix in
-# .github/workflows/tests.yml — there is nothing to add here.
-#
-#   PHP_VERSION=8.6 docker compose build
 ARG PHP_VERSION=8.5
 
 FROM composer:2.7 AS vendor
@@ -22,8 +17,6 @@ WORKDIR /code
 
 COPY --from=vendor /src/vendor /code/vendor
 
-# Composer itself, for the `test`, `check` and `lint` scripts. The base image
-# ships PHP but not composer.
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 
 COPY ./composer.json /code/composer.json
