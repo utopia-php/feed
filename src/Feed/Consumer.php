@@ -60,8 +60,8 @@ class Consumer
     {
         $events = $this->feed->poll(
             $this->position() ?? $this->origin(),
-            \max(1, \min($this->batch, Protocol::MAX_BATCH)),
-            \max(0, \min($this->timeout, Protocol::MAX_TIMEOUT)),
+            \max(1, \min($this->batch, Readable::MAX_BATCH)),
+            \max(0, \min($this->timeout, Readable::MAX_TIMEOUT)),
         );
 
         if ($events === []) {
@@ -98,7 +98,7 @@ class Consumer
 
     private function origin(): ?string
     {
-        return $this->start === self::START_TIP ? Protocol::TIP : null;
+        return $this->start === self::START_TIP ? Readable::TIP : null;
     }
 
     public function position(): ?string

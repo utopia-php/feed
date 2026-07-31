@@ -13,7 +13,7 @@ use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Server;
 use Utopia\Feed\Producer;
-use Utopia\Feed\Protocol;
+use Utopia\Feed\Readable;
 use Utopia\Feed\Id;
 use Utopia\Tests\Unit\Support\MidPollStore;
 
@@ -118,7 +118,7 @@ class ServerTest extends TestCase
     {
         $this->producer->produce('test');
 
-        $this->assertCount(1, $this->server->read(null, Protocol::MAX_BATCH * 10));
+        $this->assertCount(1, $this->server->read(null, Readable::MAX_BATCH * 10));
         $this->assertCount(1, $this->server->read(null, 0));
         $this->assertCount(1, $this->server->read(null, -5));
     }
@@ -366,7 +366,7 @@ class ServerTest extends TestCase
         $this->producer->produce('a');
         $this->producer->produce('b');
 
-        $this->assertCount(0, $this->server->read(Protocol::TIP));
+        $this->assertCount(0, $this->server->read(Readable::TIP));
     }
 
     public function testServeAppliesTheDefaultsWhenNoParametersArrive(): void
@@ -410,7 +410,7 @@ class ServerTest extends TestCase
     {
         $this->producer->produce('a');
 
-        $this->assertCount(0, $this->server->serve(['lastEventId' => Protocol::TIP]));
+        $this->assertCount(0, $this->server->serve(['lastEventId' => Readable::TIP]));
     }
 
     public function testServeFallsBackToTheDefaultOnAGarbageLimit(): void
@@ -430,13 +430,13 @@ class ServerTest extends TestCase
      */
     public function testAnOversizedLimitStillYieldsAnHonestCacheControl(): void
     {
-        foreach (\range(1, Protocol::MAX_BATCH) as $i) {
+        foreach (\range(1, Readable::MAX_BATCH) as $i) {
             $this->producer->produce('event-' . $i);
         }
 
         $batch = $this->server->serve(['limit' => '5000']);
 
-        $this->assertCount(Protocol::MAX_BATCH, $batch);
+        $this->assertCount(Readable::MAX_BATCH, $batch);
         $this->assertSame('public, max-age=31536000', $batch->cacheControl(public: true));
     }
 

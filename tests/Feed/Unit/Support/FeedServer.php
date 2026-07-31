@@ -6,7 +6,7 @@ namespace Utopia\Tests\Unit\Support;
 
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
-use Utopia\Feed\Protocol;
+use Utopia\Feed\Batch;
 use Utopia\Feed\Server;
 use Utopia\Psr7\Header;
 use Utopia\Psr7\Response;
@@ -37,7 +37,7 @@ class FeedServer extends FakeClient
         $body = (string) \json_encode($batch->toArray());
 
         return (new Response(200, body: new Stream\Factory()->createStream($body)))
-            ->withHeader(Header::CONTENT_TYPE, Protocol::MEDIA_TYPE)
+            ->withHeader(Header::CONTENT_TYPE, Batch::MEDIA_TYPE)
             ->withHeader(Header::CACHE_CONTROL, $batch->cacheControl());
     }
 }

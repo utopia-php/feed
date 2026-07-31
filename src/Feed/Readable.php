@@ -8,6 +8,20 @@ use Utopia\CloudEvents\CloudEvent;
 
 interface Readable
 {
+    /**
+     * Extension beyond the spec, like `limit`: a `lastEventId` of `$` means
+     * "the tip of the feed". The producer resolves it to the newest event at
+     * the moment the request arrives, so a consumer can ask for only what
+     * happens from now on without a separate round trip to learn the tip.
+     */
+    public const string TIP = '$';
+
+    /** The most events one batch may carry — producers clamp `limit` to this. */
+    public const int MAX_BATCH = 1000;
+
+    /** The longest a long poll may hold a connection, in milliseconds. */
+    public const int MAX_TIMEOUT = 30_000;
+
     public function getName(): string;
 
     /**

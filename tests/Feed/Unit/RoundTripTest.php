@@ -12,15 +12,14 @@ use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Producer;
-use Utopia\Feed\Protocol;
 use Utopia\Feed\Server;
 use Utopia\Tests\Unit\Support\FeedServer;
 
 /**
  * A producer and a consumer joined by the HTTP contract, which is the pair this
- * library exists to keep from drifting apart. Everything here goes through
- * {@see Protocol} in both directions rather than through a fixture written to
- * match one side.
+ * library exists to keep from drifting apart. Everything here goes through the
+ * real wire code in both directions — {@see Batch} encoding, {@see Remote}
+ * decoding — rather than through a fixture written to match one side.
  */
 class RoundTripTest extends TestCase
 {

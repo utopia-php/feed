@@ -36,7 +36,7 @@ abstract class Store implements Readable
 
     protected function resolve(?string $lastEventId): ?string
     {
-        return $lastEventId === Protocol::TIP ? $this->tip() : $lastEventId;
+        return $lastEventId === Readable::TIP ? $this->tip() : $lastEventId;
     }
 
     /**

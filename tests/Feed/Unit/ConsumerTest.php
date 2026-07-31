@@ -13,7 +13,7 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Producer;
-use Utopia\Feed\Protocol;
+use Utopia\Feed\Readable;
 use Utopia\Tests\Unit\Support\FailingCursor;
 use Utopia\Tests\Unit\Support\FakeTransport;
 use Utopia\Tests\Unit\Support\MidPollStore;
@@ -224,8 +224,8 @@ class ConsumerTest extends TestCase
         $consumer = new Consumer($store, $this->cursor, 'invalidator', batch: 5_000, timeout: 120_000);
         $consumer->consume(fn (CloudEvent $event) => null);
 
-        $this->assertSame(Protocol::MAX_BATCH, $store->limit);
-        $this->assertSame(Protocol::MAX_TIMEOUT, $store->timeout);
+        $this->assertSame(Readable::MAX_BATCH, $store->limit);
+        $this->assertSame(Readable::MAX_TIMEOUT, $store->timeout);
     }
 
     public function testDrainsABacklogInBatches(): void

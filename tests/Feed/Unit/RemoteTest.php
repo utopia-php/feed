@@ -13,8 +13,9 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Exception\Unsupported;
+use Utopia\Feed\Batch;
 use Utopia\Feed\Producer;
-use Utopia\Feed\Protocol;
+use Utopia\Feed\Readable;
 use Utopia\Feed\Remote;
 use Utopia\Feed\Server;
 use Utopia\Tests\Unit\Support\FakeTransport;
@@ -34,9 +35,20 @@ class RemoteTest extends TestCase
         return [new Remote($transport, 'edge'), $transport];
     }
 
+    /**
+     * A response body as a producer would put it on the wire.
+     *
+     * @param list<CloudEvent> $events
+     * @return list<array<array-key, mixed>>
+     */
+    private static function batch(array $events): array
+    {
+        return (new Batch($events, \count($events)))->toArray();
+    }
+
     public function testReadsAFeedOverHttp(): void
     {
-        [$remote] = $this->remote([FakeTransport::json(Protocol::encode([
+        [$remote] = $this->remote([FakeTransport::json(self::batch([
             new CloudEvent(id: '1-0', type: 'io.appwrite.edge.invalidate-rule', source: 'urn:test', data: ['tags' => ['domain' => 'example.com']]),
             new CloudEvent(id: '1-1', type: 'io.appwrite.edge.invalidate', source: 'urn:test'),
         ]))]);
@@ -117,8 +129,8 @@ class RemoteTest extends TestCase
 
         $remote->read();
 
-        $this->assertSame(Protocol::MEDIA_TYPE, $transport->recorder->last()['headers']['Accept'] ?? null);
-        $this->assertSame('application/cloudevents-batch+json', Protocol::MEDIA_TYPE);
+        $this->assertSame(Remote::MEDIA_TYPE, $transport->recorder->last()['headers']['Accept'] ?? null);
+        $this->assertSame('application/cloudevents-batch+json', Remote::MEDIA_TYPE);
     }
 
     public function testSendsThePositionAndLimit(): void
@@ -137,7 +149,7 @@ class RemoteTest extends TestCase
     {
         [$remote, $transport] = $this->remote();
 
-        $remote->read(null, Protocol::MAX_BATCH);
+        $remote->read(null, Readable::MAX_BATCH);
 
         $this->assertStringNotContainsString('lastEventId', $transport->recorder->last()['uri']);
     }
@@ -169,10 +181,9 @@ class RemoteTest extends TestCase
 
         $remote->poll(null, 100, 5000);
 
-        // Seconds, which is what the client takes; the protocol margin is in
+        // Seconds, which is what the client takes; the margin is in
         // milliseconds, like the timeout the producer is given.
         $this->assertSame(15.0, $transport->recorder->last()['timeout']);
-        $this->assertSame((float) ((5000 + Protocol::TIMEOUT_MARGIN) / 1000), $transport->recorder->last()['timeout']);
     }
 
     public function testLeavesTheConfiguredTimeoutAloneWhenNotLongPolling(): void
@@ -256,13 +267,158 @@ class RemoteTest extends TestCase
     }
 
     /**
+     * An empty batch means "you are caught up". A JSON object means "you did
+     * not reach the feed" — a misrouted request, a proxy's JSON error page, an
+     * endpoint that moved. Reading one as an empty batch would leave a
+     * consumer sitting quietly at a position that never advances again.
+     *
+     * @dataProvider notBatches
+     * @param array<array-key, mixed> $payload
+     */
+    public function testARespondingEndpointThatIsNotAFeedIsNotMistakenForBeingCaughtUp(array $payload): void
+    {
+        [$remote] = $this->remote([FakeTransport::json($payload)]);
+
+        $this->expectException(Invalid::class);
+
+        $remote->read();
+    }
+
+    /**
+     * @return array<string, array{array<array-key, mixed>}>
+     */
+    public static function notBatches(): array
+    {
+        return [
+            'the old envelope' => [['total' => 0, 'events' => []]],
+            'some other API' => [['data' => [], 'status' => 'ok']],
+            'an error body' => [['message' => 'Not found', 'code' => 404]],
+        ];
+    }
+
+    /**
+     * One event as a producer would put it on the wire.
+     *
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    private static function raw(string $id, string $type, array $overrides = []): array
+    {
+        return \array_merge([
+            'specversion' => '1.0',
+            'id' => $id,
+            'type' => $type,
+            'source' => 'urn:test',
+        ], $overrides);
+    }
+
+    /**
+     * An event with no id has no position, so a consumer cannot record having
+     * passed it. Returning the usable prefix lets those events be handled and
+     * the position advance to the last of them; the broken event is then at
+     * the head of the next batch, where it stops the feed loudly.
+     */
+    public function testKeepsTheEventsBeforeAnUndecodableOne(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([
+            self::raw('1-0', 'a'),
+            self::raw('1-1', 'b'),
+            self::raw('', 'no id'),
+            self::raw('1-3', 'd'),
+        ])]);
+
+        $events = $remote->read();
+
+        $this->assertCount(2, $events);
+        $this->assertSame(['a', 'b'], \array_map(fn (CloudEvent $e): string => $e->type, $events));
+    }
+
+    public function testFailsWhenTheFirstEventIsUndecodable(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([self::raw('', 'no id'), self::raw('1-1', 'b')])]);
+
+        $this->expectException(Invalid::class);
+
+        $remote->read();
+    }
+
+    public function testFailsWhenTheFirstEntryIsNotAnEvent(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json(['a string'])]);
+
+        $this->expectException(Invalid::class);
+
+        $remote->read();
+    }
+
+    public function testKeepsTheEventsBeforeAnEntryThatIsNotAnEvent(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([self::raw('1-0', 'a'), 'a string'])]);
+
+        $this->assertCount(1, $remote->read());
+    }
+
+    /**
+     * `specversion` is REQUIRED by the spec and a feed's own producer always
+     * sends it, so an entry without one is not a CloudEvent at all — the batch
+     * stops there rather than the attribute being invented.
+     */
+    public function testFailsWhenAnEventIsNotACloudEventAtAll(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([['id' => '1-0', 'type' => 'a']])]);
+
+        $this->expectException(Invalid::class);
+
+        $remote->read();
+    }
+
+    /**
+     * The forward-compatibility property a feed depends on: it is read by
+     * consumers older than the producer by design, so a producer that adds an
+     * attribute or moves the spec version forward must not stop one that
+     * predates it.
+     */
+    public function testSurvivesAProducerThatMovedAhead(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([
+            self::raw('1-0', 'a', [
+                'specversion' => '1.1',
+                'somethingnew' => 'ignored',
+                'traceparent' => '00-abc-def-01',
+            ]),
+        ])]);
+
+        $events = $remote->read();
+
+        $this->assertCount(1, $events);
+        $this->assertSame('1.1', $events[0]->specversion);
+        $this->assertSame('00-abc-def-01', $events[0]->extensions['traceparent']);
+    }
+
+    /**
+     * The spec's optional compaction/deletion feature marks an event with a
+     * `method` attribute. This library does not implement the feature, but a
+     * feed that uses it must still be readable — the attribute rides along as
+     * an extension rather than breaking the batch.
+     */
+    public function testAnEventCarryingTheSpecsMethodAttributeDecodes(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([self::raw('1-0', 'a', ['method' => 'DELETE'])])]);
+
+        $events = $remote->read();
+
+        $this->assertCount(1, $events);
+        $this->assertSame('DELETE', $events[0]->extensions['method']);
+    }
+
+    /**
      * Anything implementing the client's adapter interface works, including
      * the client itself wrapping a transport — which is how this is actually
      * built in a service.
      */
     public function testWorksThroughTheClientItself(): void
     {
-        $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-0', type: 'a', source: 'urn:test')]))]);
+        $transport = FakeTransport::of([FakeTransport::json(self::batch([new CloudEvent(id: '1-0', type: 'a', source: 'urn:test')]))]);
 
         $client = (new Client($transport))
             ->withBaseUri('https://cloud.example.com/v1/feeds')
@@ -283,12 +439,12 @@ class RemoteTest extends TestCase
     public function testConsumesARemoteFeedThroughTheSameConsumer(): void
     {
         $transport = FakeTransport::of([
-            FakeTransport::json(Protocol::encode([
+            FakeTransport::json(self::batch([
                 new CloudEvent(id: '1-0', type: 'a', source: 'urn:test'),
                 new CloudEvent(id: '1-1', type: 'b', source: 'urn:test'),
             ])),
-            FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-2', type: 'c', source: 'urn:test')])),
-            FakeTransport::json(Protocol::encode([])),
+            FakeTransport::json(self::batch([new CloudEvent(id: '1-2', type: 'c', source: 'urn:test')])),
+            FakeTransport::json(self::batch([])),
         ]);
 
         $cursor = new MemoryCursor();

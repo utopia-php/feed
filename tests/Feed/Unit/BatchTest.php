@@ -7,7 +7,6 @@ namespace Utopia\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Batch;
-use Utopia\Feed\Protocol;
 
 class BatchTest extends TestCase
 {
@@ -65,11 +64,22 @@ class BatchTest extends TestCase
         $this->assertSame('no-store', (new Batch([], 2))->cacheControl());
     }
 
+    /**
+     * A batch of zero out of zero is not history — it is a caught-up consumer,
+     * and caching it would pin the consumer at that position forever.
+     */
+    public function testAnEmptyBatchIsNeverCacheable(): void
+    {
+        $this->assertSame('no-store', (new Batch([], 0))->cacheControl());
+    }
+
     public function testToArrayIsTheWireEncoding(): void
     {
-        $events = self::events(2);
+        $payload = (new Batch(self::events(2), 100))->toArray();
 
-        $this->assertSame(Protocol::encode($events), (new Batch($events, 100))->toArray());
+        $this->assertTrue(\array_is_list($payload), 'A batch is a plain array — the spec defines no envelope');
+        $this->assertSame(['1-0', '1-1'], \array_column($payload, 'id'));
+        $this->assertSame('1.0', $payload[0]['specversion']);
         $this->assertSame([], (new Batch([], 100))->toArray());
     }
 }

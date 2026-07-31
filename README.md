@@ -310,10 +310,11 @@ connection for the whole wait, which is exactly what `Store\Pool`'s
 borrow-per-read strategy exists to avoid. Tune the trade-off with
 `pollInterval`.
 
-**For integrators** building a transport of their own: the wire contract —
-query parameters, batch encoding, caching rule — lives in `Utopia\Feed\Protocol`,
-and `Utopia\Feed\Remote` is the client-side `Readable` the consumer builds
-over its client. Services never need either.
+**For integrators** building a transport of their own: the shared contract —
+the tip sentinel and the batch/timeout limits — lives on `Utopia\Feed\Readable`;
+`Utopia\Feed\Batch` carries the serving side (encoding, media type, caching
+rule) and `Utopia\Feed\Remote` is the client-side `Readable` the consumer
+builds over its client. Services never need any of them directly.
 
 ## Tests
 
