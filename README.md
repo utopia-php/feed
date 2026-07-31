@@ -124,50 +124,51 @@ retry.
 
 ### Serve a feed over HTTP
 
-`Protocol` holds the wire contract — query parameters, response body, caching
-rules — and deals in arrays, so it fits whichever HTTP layer you use:
-
-The feed a service serves is the read half of the same journal it appends to:
+The feed a service serves is the read half of the same journal it appends to.
+`Feed::serve()` takes the route's raw query parameters and answers with a
+`Batch`, which knows its own body and caching header — the whole route body is:
 
 ```php
 use Utopia\Feed\Feed;
-use Utopia\Feed\Protocol;
 
 $feed = new Feed($journal);   // the same journal the Producer was built on
 
 // GET /v1/feeds/:feedId
-$limit = \min((int) $request->getParam(Protocol::PARAM_LIMIT, Feed::MAX_BATCH), Feed::MAX_BATCH);
-
-$events = $feed->poll(
-    $request->getParam(Protocol::PARAM_LAST_EVENT_ID) ?: null,
-    $limit,
-    (int) $request->getParam(Protocol::PARAM_TIMEOUT, 0),
-);
+$batch = $feed->serve($request->getParams());
 
 $response
-    ->addHeader('Content-Type', Protocol::MEDIA_TYPE)
-    ->addHeader('Cache-Control', Protocol::cacheControl(\count($events), $limit))
-    ->json(Protocol::encode($events));
+    ->addHeader('Content-Type', 'application/cloudevents-batch+json')
+    ->addHeader('Cache-Control', $batch->cacheControl(public: true))
+    ->json($batch->toArray());
 ```
+
+`serve()` extracts `lastEventId`, `limit` and `timeout` from the query,
+coerces their string values, applies the defaults, and clamps the batch to
+`Feed::MAX_BATCH` (1000 events) and the long-poll wait to `Feed::MAX_TIMEOUT`
+(30s), so a client cannot ask for more than the producer is willing to build
+or hold. A malformed `lastEventId` throws `Exception\Invalid` — catch it to
+answer 400.
 
 The response body is a bare JSON array of CloudEvents, as
 [http-feeds.org](https://www.http-feeds.org/) defines it — no envelope. An
 empty array means the consumer is caught up. The media type is
-`application/cloudevents-batch+json` (`Protocol::MEDIA_TYPE`); on receipt this
-library only checks the body shape, so a feed answering `application/json`
-still reads fine.
+`application/cloudevents-batch+json`; on receipt this library only checks the
+body shape, so a feed answering `application/json` still reads fine.
 
 The spec defines two query parameters: `lastEventId` and `timeout`. The
 `limit` parameter is this library's extension beyond the spec — a
 spec-compliant consumer simply never sends it, and gets full batches.
 
-Cap the limit yourself with `Feed::MAX_BATCH` before the call, so the number
-that reaches `cacheControl()` is the one the batch was actually built with — a
-read never returns more than that cap anyway. `Feed` clamps the wait too, to
-`Feed::MAX_TIMEOUT` (30s), so a client cannot ask a producer to hold a
-connection open for as long as it likes. A full batch is settled history and is
-marked cacheable; a short one is the live end of the feed and is marked
-`no-store`. Caching is `private` unless you pass `public: true`.
+A full batch is settled history and `cacheControl()` marks it cacheable; a
+short one is the live end of the feed and is marked `no-store`. Caching is
+`private` unless you pass `public: true`. The batch carries the limit it was
+actually built with, so the header is always honest — there is no number for
+the route to keep in sync.
+
+Callers that already hold typed values can use `Feed::read()` and
+`Feed::poll()` directly; both return a `Batch`, which counts and iterates as
+the list of events it carries, and `Batch::lastId()` is the position a
+stateless relay would otherwise track by hand.
 
 ## Events
 

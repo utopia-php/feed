@@ -38,11 +38,17 @@ class ProducerTest extends TestCase
         $this->assertTrue(Id::isValid($id));
     }
 
+    /** @return list<CloudEvent> */
+    private function events(): array
+    {
+        return \array_values(\iterator_to_array($this->feed->read()));
+    }
+
     public function testStampsTheSourceAndTimeOnAppend(): void
     {
         $this->producer->append('test');
 
-        $event = $this->feed->read()[0];
+        $event = $this->events()[0];
 
         $this->assertSame('urn:appwrite:cloud:fra', $event->source);
         $this->assertNotNull($event->time);
@@ -58,7 +64,7 @@ class ProducerTest extends TestCase
         (new Producer($this->journal, 'urn:appwrite:cloud:fra'))->append('test');
         (new Producer($this->journal, 'urn:appwrite:cloud:nyc'))->append('test');
 
-        $events = $this->feed->read();
+        $events = $this->events();
 
         $this->assertSame('urn:appwrite:cloud:fra', $events[0]->source);
         $this->assertSame('urn:appwrite:cloud:nyc', $events[1]->source);
@@ -68,7 +74,7 @@ class ProducerTest extends TestCase
     {
         $id = $this->producer->publish(new CloudEvent(id: 'ignored', type: 'test', source: 'ignored', data: ['a' => 'b'], subject: 's'));
 
-        $event = $this->feed->read()[0];
+        $event = $this->events()[0];
 
         $this->assertSame($id, $event->id);
         $this->assertNotSame('ignored', $event->id, 'The backend assigns the position, not the caller');
@@ -80,7 +86,7 @@ class ProducerTest extends TestCase
     {
         $this->producer->publish(new CloudEvent(id: '', type: 'test', source: '', time: '2020-01-01T00:00:00.000Z'));
 
-        $this->assertSame('2020-01-01T00:00:00.000Z', $this->feed->read()[0]->time);
+        $this->assertSame('2020-01-01T00:00:00.000Z', $this->events()[0]->time);
     }
 
     public function testRejectsAnEmptyEventType(): void

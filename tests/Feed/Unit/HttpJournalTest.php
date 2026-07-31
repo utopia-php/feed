@@ -38,7 +38,7 @@ class HttpJournalTest extends TestCase
             new CloudEvent(id: '1-1', type: 'io.appwrite.edge.invalidate', source: 'urn:test'),
         ]))]);
 
-        $events = $feed->read();
+        $events = \array_values(\iterator_to_array($feed->read()));
 
         $this->assertCount(2, $events);
         $this->assertSame('1-0', $events[0]->id);

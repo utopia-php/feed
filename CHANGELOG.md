@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Breaking:** `Feed::read()` and `Feed::poll()` return a `Batch` instead of
+  a plain event array. A batch counts and iterates as its events and carries
+  the limit it was actually built with, so `Batch::cacheControl()` can never
+  be fed a number the read did not use. `Batch::toArray()` is the wire
+  encoding, `Batch::lastId()` the position a stateless relay tracks.
+- Added `Feed::serve(array $query): Batch` — the whole HTTP request in one
+  call: extracts `lastEventId`, `limit` and `timeout` from the route's raw
+  query parameters, coerces and clamps them, and rejects a malformed
+  `lastEventId` with `Exception\Invalid`. A route never needs to name
+  `Protocol`, which is now documented as internal plumbing.
+
 - **Breaking (wire format):** a feed batch on the wire is now the plain JSON
   array of CloudEvents that [http-feeds.org](https://www.http-feeds.org/)
   defines — the `{total, events}` envelope is gone, and an empty feed

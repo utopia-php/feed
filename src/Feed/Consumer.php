@@ -33,9 +33,9 @@ class Consumer
 
     public function consume(callable $handler): int
     {
-        $events = $this->feed->poll($this->position(), $this->batch, $this->timeout);
+        $batch = $this->feed->poll($this->position(), $this->batch, $this->timeout);
 
-        if ($events === []) {
+        if ($batch->isEmpty()) {
             return 0;
         }
 
@@ -43,7 +43,7 @@ class Consumer
         $processed = null;
         $failure = null;
 
-        foreach ($events as $event) {
+        foreach ($batch as $event) {
             try {
                 $handler($event);
             } catch (\Throwable $error) {

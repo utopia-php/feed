@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Journal\Memory;
 use Utopia\Feed\Journal\None;
 use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Batch;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
@@ -29,11 +30,17 @@ class FeedTest extends TestCase
         $this->feed = new Feed($this->journal);
     }
 
+    /** @return list<CloudEvent> */
+    private static function events(Batch $batch): array
+    {
+        return \array_values(\iterator_to_array($batch));
+    }
+
     public function testReadsBackWhatWasAppended(): void
     {
         $this->producer->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
 
-        $events = $this->feed->read();
+        $events = self::events($this->feed->read());
 
         $this->assertCount(1, $events);
         $this->assertSame('io.appwrite.edge.invalidate-rule', $events[0]->type);
@@ -47,7 +54,7 @@ class FeedTest extends TestCase
             $this->producer->append($type);
         }
 
-        $this->assertSame(['a', 'b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $this->feed->read()));
+        $this->assertSame(['a', 'b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($this->feed->read())));
     }
 
     public function testIdsAreStrictlyIncreasingEvenWithinAMillisecond(): void
@@ -69,7 +76,7 @@ class FeedTest extends TestCase
         $first = $this->producer->append('a');
         $this->producer->append('b');
 
-        $events = $this->feed->read($first);
+        $events = self::events($this->feed->read($first));
 
         $this->assertCount(1, $events);
         $this->assertSame('b', $events[0]->type);
@@ -80,7 +87,7 @@ class FeedTest extends TestCase
         $this->producer->append('a');
         $last = $this->producer->append('b');
 
-        $this->assertSame([], $this->feed->read($last));
+        $this->assertCount(0, $this->feed->read($last));
     }
 
     public function testNullPositionReadsFromTheOldestRetainedEvent(): void
@@ -135,7 +142,7 @@ class FeedTest extends TestCase
             extensions: ['traceparent' => '00-abc-def-01', 'retrycount' => 2],
         ));
 
-        $event = $this->feed->read()[0];
+        $event = self::events($this->feed->read())[0];
 
         $this->assertSame('00-abc-def-01', $event->extensions['traceparent']);
         $this->assertSame(2, $event->extensions['retrycount']);
@@ -157,7 +164,7 @@ class FeedTest extends TestCase
             extensions: ['123' => 'digits', 'trace' => 'ok'],
         ));
 
-        $event = $this->feed->read()[0];
+        $event = self::events($this->feed->read())[0];
 
         // @phpstan-ignore offsetAccess.notFound
         $this->assertSame('digits', $event->extensions['123']);
@@ -173,7 +180,7 @@ class FeedTest extends TestCase
             dataschema: 'https://example.com/schema.json',
         ));
 
-        $this->assertSame('https://example.com/schema.json', $this->feed->read()[0]->dataschema);
+        $this->assertSame('https://example.com/schema.json', self::events($this->feed->read())[0]->dataschema);
     }
 
     /**
@@ -204,7 +211,7 @@ class FeedTest extends TestCase
     {
         $this->producer->append('test', $data);
 
-        $this->assertSame($data, $this->feed->read()[0]->data);
+        $this->assertSame($data, self::events($this->feed->read())[0]->data);
     }
 
     /**
@@ -215,14 +222,14 @@ class FeedTest extends TestCase
     {
         $this->producer->append('test');
 
-        $this->assertNull($this->feed->read()[0]->subject);
+        $this->assertNull(self::events($this->feed->read())[0]->subject);
     }
 
     public function testASubjectSurvivesAppendAndRead(): void
     {
         $this->producer->append('test', [], 'example.com');
 
-        $this->assertSame('example.com', $this->feed->read()[0]->subject);
+        $this->assertSame('example.com', self::events($this->feed->read())[0]->subject);
     }
 
     public function testPollReturnsImmediatelyWhenEventsAreWaiting(): void
@@ -242,7 +249,7 @@ class FeedTest extends TestCase
         $events = $this->feed->poll(null, 10, 600);
         $elapsed = \microtime(true) - $started;
 
-        $this->assertSame([], $events);
+        $this->assertCount(0, $events);
         $this->assertGreaterThanOrEqual(0.4, $elapsed, 'Must actually wait');
         $this->assertLessThan(3.0, $elapsed, 'Must not wait far past the timeout');
     }
@@ -251,7 +258,7 @@ class FeedTest extends TestCase
     {
         $started = \microtime(true);
 
-        $this->assertSame([], $this->feed->poll());
+        $this->assertCount(0, $this->feed->poll());
         $this->assertLessThan(0.4, \microtime(true) - $started);
     }
 
@@ -265,7 +272,7 @@ class FeedTest extends TestCase
             $producer->append($type);
         }
 
-        $this->assertSame(['c', 'd', 'e'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read()));
+        $this->assertSame(['c', 'd', 'e'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($feed->read())));
     }
 
     /**
@@ -282,7 +289,7 @@ class FeedTest extends TestCase
         $producer->append('b');
         $producer->append('c');
 
-        $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $feed->read($first)));
+        $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($feed->read($first))));
     }
 
     public function testExposesTheFeedItReads(): void
@@ -297,6 +304,82 @@ class FeedTest extends TestCase
         $this->expectException(Unsupported::class);
 
         $feed->read();
+    }
+
+    public function testServeAppliesTheDefaultsWhenNoParametersArrive(): void
+    {
+        $this->producer->append('a');
+        $this->producer->append('b');
+
+        $this->assertCount(2, $this->feed->serve([]));
+    }
+
+    public function testServeCoercesTheStringValuesARouteHands(): void
+    {
+        $first = $this->producer->append('a');
+        $this->producer->append('b');
+        $this->producer->append('c');
+
+        $batch = $this->feed->serve([
+            'lastEventId' => $first,
+            'limit' => '1',
+            'timeout' => '0',
+        ]);
+
+        $this->assertSame(['b'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($batch)));
+    }
+
+    public function testServeTreatsAnEmptyLastEventIdAsAbsent(): void
+    {
+        $this->producer->append('a');
+
+        $this->assertCount(1, $this->feed->serve(['lastEventId' => '']));
+    }
+
+    public function testServeRejectsALastEventIdThatIsNotAPosition(): void
+    {
+        $this->expectException(Invalid::class);
+
+        $this->feed->serve(['lastEventId' => 'not-a-position']);
+    }
+
+    public function testServeFallsBackToTheDefaultOnAGarbageLimit(): void
+    {
+        $this->producer->append('a');
+        $this->producer->append('b');
+
+        $this->assertCount(2, $this->feed->serve(['limit' => 'lots', 'timeout' => 'soon']));
+    }
+
+    /**
+     * The trap the old API set: a route that passed the raw request limit to
+     * the caching rule while the read was clamped to less would mark a full
+     * batch `no-store` — or worse. The batch carries the limit it was actually
+     * built with, so a full batch under an oversized request is still
+     * recognized as settled history.
+     */
+    public function testAnOversizedLimitStillYieldsAnHonestCacheControl(): void
+    {
+        foreach (\range(1, Feed::MAX_BATCH) as $i) {
+            $this->producer->append('event-' . $i);
+        }
+
+        $batch = $this->feed->serve(['limit' => '5000']);
+
+        $this->assertCount(Feed::MAX_BATCH, $batch);
+        $this->assertSame('public, max-age=31536000', $batch->cacheControl(public: true));
+    }
+
+    public function testAShortBatchIsNotCacheable(): void
+    {
+        $this->producer->append('a');
+
+        $this->assertSame('no-store', $this->feed->serve([])->cacheControl());
+    }
+
+    public function testAnEmptyBatchIsNotCacheable(): void
+    {
+        $this->assertSame('no-store', $this->feed->serve([])->cacheControl());
     }
 
     public function testRejectsAnEmptyFeedName(): void
@@ -315,7 +398,7 @@ class FeedTest extends TestCase
         $producer->append('a');
         $producer->append('b');
 
-        $events = $feed->read();
+        $events = self::events($feed->read());
 
         $this->assertCount(1, $events);
         $this->assertSame('b', $events[0]->type);

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
-use Utopia\CloudEvents\CloudEvent;
-
 // Server and client class: the read view of a feed — read and long-poll.
 // Server serves its own feed with this; client reads a remote one through Journal\Http.
 class Feed
@@ -23,19 +21,49 @@ class Feed
         return $this->journal->getName();
     }
 
-    /** @return list<CloudEvent> */
-    public function read(?string $lastEventId = null, int $limit = self::MAX_BATCH): array
+    public function read(?string $lastEventId = null, int $limit = self::MAX_BATCH): Batch
     {
-        return $this->journal->read($lastEventId, \max(1, \min($limit, self::MAX_BATCH)));
+        $limit = \max(1, \min($limit, self::MAX_BATCH));
+
+        return new Batch($this->journal->read($lastEventId, $limit), $limit);
     }
 
-    /** @return list<CloudEvent> */
-    public function poll(?string $lastEventId = null, int $limit = self::MAX_BATCH, int $timeout = 0): array
+    public function poll(?string $lastEventId = null, int $limit = self::MAX_BATCH, int $timeout = 0): Batch
     {
-        return $this->journal->poll(
+        $limit = \max(1, \min($limit, self::MAX_BATCH));
+
+        return new Batch(
+            $this->journal->poll($lastEventId, $limit, \max(0, \min($timeout, self::MAX_TIMEOUT))),
+            $limit,
+        );
+    }
+
+    /**
+     * Serve one HTTP feed request: the route's raw query-parameter array in,
+     * the batch out. Extracts `lastEventId`, `limit` and `timeout`, coerces
+     * their string values, applies the defaults and clamps to the protocol
+     * limits, so the route never touches the wire vocabulary itself.
+     *
+     * @param array<array-key, mixed> $query The request's query parameters, string values included.
+     *
+     * @throws Exception\Invalid When `lastEventId` is present but is not a feed position — a 400-worthy input.
+     */
+    public function serve(array $query): Batch
+    {
+        $lastEventId = $query[Protocol::PARAM_LAST_EVENT_ID] ?? null;
+        $lastEventId = \is_string($lastEventId) && $lastEventId !== '' ? $lastEventId : null;
+
+        if ($lastEventId !== null && !Id::isValid($lastEventId)) {
+            throw new Exception\Invalid('Invalid lastEventId: ' . $lastEventId);
+        }
+
+        $limit = $query[Protocol::PARAM_LIMIT] ?? null;
+        $timeout = $query[Protocol::PARAM_TIMEOUT] ?? null;
+
+        return $this->poll(
             $lastEventId,
-            \max(1, \min($limit, self::MAX_BATCH)),
-            \max(0, \min($timeout, self::MAX_TIMEOUT)),
+            \is_numeric($limit) ? (int) $limit : self::MAX_BATCH,
+            \is_numeric($timeout) ? (int) $timeout : 0,
         );
     }
 }

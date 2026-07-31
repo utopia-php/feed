@@ -9,6 +9,7 @@ use Utopia\Feed\Journal\Redis as RedisJournal;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Redis as RedisCursor;
 use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Batch;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
@@ -53,6 +54,12 @@ class RedisTest extends TestCase
         return new Feed(new RedisJournal($this->redis, $this->name, $maxSize));
     }
 
+    /** @return list<CloudEvent> */
+    private static function events(Batch $batch): array
+    {
+        return \array_values(\iterator_to_array($batch));
+    }
+
     private function producer(int $maxSize = 100_000): Producer
     {
         return new Producer(new RedisJournal($this->redis, $this->name, $maxSize), 'urn:test:e2e');
@@ -77,7 +84,7 @@ class RedisTest extends TestCase
 
         $id = $producer->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
 
-        $events = $feed->read();
+        $events = self::events($feed->read());
 
         $this->assertCount(1, $events);
         $this->assertSame($id, $events[0]->id);
@@ -123,11 +130,11 @@ class RedisTest extends TestCase
         $first = $producer->append('a');
         $second = $producer->append('b');
 
-        $events = $feed->read($first);
+        $events = self::events($feed->read($first));
 
         $this->assertCount(1, $events);
         $this->assertSame($second, $events[0]->id);
-        $this->assertSame([], $feed->read($second));
+        $this->assertCount(0, $feed->read($second));
     }
 
     public function testExtensionsAndDataschemaSurviveTheRoundTrip(): void
@@ -140,7 +147,7 @@ class RedisTest extends TestCase
             extensions: ['traceparent' => '00-abc-def-01'],
         ));
 
-        $event = $this->feed()->read()[0];
+        $event = self::events($this->feed()->read())[0];
 
         $this->assertSame('https://example.com/schema.json', $event->dataschema);
         $this->assertSame('00-abc-def-01', $event->extensions['traceparent']);
@@ -150,14 +157,14 @@ class RedisTest extends TestCase
     {
         $this->producer()->append('test');
 
-        $this->assertNull($this->feed()->read()[0]->subject);
+        $this->assertNull(self::events($this->feed()->read())[0]->subject);
     }
 
     public function testAScalarPayloadSurvivesTheRoundTrip(): void
     {
         $this->producer()->append('test', 'a string');
 
-        $this->assertSame('a string', $this->feed()->read()[0]->data);
+        $this->assertSame('a string', self::events($this->feed()->read())[0]->data);
     }
 
     public function testNestedPayloadsSurviveTheRoundTrip(): void
@@ -171,7 +178,7 @@ class RedisTest extends TestCase
 
         $this->producer()->append('test', $data);
 
-        $this->assertSame($data, $this->feed()->read()[0]->data);
+        $this->assertSame($data, self::events($this->feed()->read())[0]->data);
     }
 
     public function testHonoursTheLimit(): void
@@ -209,7 +216,7 @@ class RedisTest extends TestCase
 
         $events = $feed->read($first);
 
-        $this->assertNotEmpty($events, 'A consumer that fell behind must still get what is retained');
+        $this->assertFalse($events->isEmpty(), 'A consumer that fell behind must still get what is retained');
         $this->assertLessThan(500, $this->redis->xLen('feed:' . $this->name), 'The feed must be trimmed');
     }
 
@@ -230,7 +237,7 @@ class RedisTest extends TestCase
         $started = \microtime(true);
         $events = $this->feed()->poll(null, 10, 700);
 
-        $this->assertSame([], $events);
+        $this->assertCount(0, $events);
         $this->assertGreaterThanOrEqual(0.4, \microtime(true) - $started);
     }
 
