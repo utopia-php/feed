@@ -398,6 +398,124 @@ class ConsumerTest extends TestCase
         $this->assertSame(['a', 'b'], $this->drain($consumer));
     }
 
+    public function testSeekPositionsTheNextRunStrictlyAfterTheGivenId(): void
+    {
+        $this->producer->append('a');
+        $second = $this->producer->append('b');
+        $this->producer->append('c');
+
+        $consumer = $this->consumer();
+        $consumer->seek($second);
+
+        $this->assertSame($second, $consumer->position(), 'The seeked id is the position until something is handled');
+        $this->assertSame(['c'], $this->drain($consumer));
+    }
+
+    /**
+     * A seek is persisted, not just remembered: a fresh Consumer sharing the
+     * store and the name — a restart — resumes from it.
+     */
+    public function testASeekSurvivesARestart(): void
+    {
+        $this->producer->append('a');
+        $second = $this->producer->append('b');
+        $this->producer->append('c');
+
+        $this->consumer()->seek($second);
+
+        $this->assertSame(['c'], $this->drain($this->consumer()));
+    }
+
+    /**
+     * The operational escape hatch seek() exists for: a handler that keeps
+     * failing blocks the feed by design, and stepping past it is a deliberate
+     * seek to the failing event's own id.
+     */
+    public function testSeekingToAPoisonEventsIdUnblocksTheConsumer(): void
+    {
+        $this->producer->append('poison');
+        $this->producer->append('after');
+
+        $consumer = $this->consumer();
+        $poison = null;
+
+        $handler = function (CloudEvent $event) use (&$poison): void {
+            if ($event->type === 'poison') {
+                $poison = $event->id;
+
+                throw new \RuntimeException('cannot handle this one');
+            }
+        };
+
+        try {
+            $consumer->consume($handler);
+            $this->fail('The poison event should have blocked the run');
+        } catch (\RuntimeException) {
+            // Expected: the feed is now blocked at the poison event.
+        }
+
+        $this->assertNotNull($poison);
+        $consumer->seek($poison);
+
+        $this->assertSame(['after'], $this->drain($consumer), 'The poison event is stepped over, nothing behind it is lost');
+    }
+
+    /**
+     * @dataProvider notPositions
+     */
+    public function testSeekRejectsAnIdThatIsNotAPosition(string $id): void
+    {
+        $first = $this->producer->append('a');
+        $this->cursor->save('edge', 'invalidator', $first);
+
+        $consumer = $this->consumer();
+
+        try {
+            $consumer->seek($id);
+            $this->fail('The id should have been rejected');
+        } catch (Invalid) {
+            // Expected.
+        }
+
+        $this->assertSame($first, $this->cursor->load('edge', 'invalidator'), 'A rejected seek leaves the stored position untouched');
+        $this->assertSame($first, $consumer->position());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function notPositions(): array
+    {
+        return [
+            'empty' => [''],
+            'not an id' => ['abc'],
+            'too many parts' => ['1-2-3'],
+            'the tip sentinel' => ['$'],
+        ];
+    }
+
+    /**
+     * A seek that did not persist must not look like one that did: the store
+     * failure surfaces, and the in-memory position stays where it was.
+     */
+    public function testASeekThatCannotPersistFailsLoudlyAndMovesNothing(): void
+    {
+        $this->producer->append('a');
+
+        $consumer = $this->consumer(new FailingCursor(onSave: true));
+
+        $this->assertNull($consumer->position());
+
+        try {
+            $consumer->seek('1-0');
+            $this->fail('The store failure should have been raised');
+        } catch (Transport) {
+            // Expected.
+        }
+
+        $this->assertNull($consumer->position(), 'The in-memory position must not move on a failed seek');
+    }
+
     public function testConsumersOfTheSameFeedTrackSeparatePositions(): void
     {
         $this->producer->append('a');

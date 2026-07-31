@@ -90,6 +90,34 @@ class Consumer
         return $this->position;
     }
 
+    /**
+     * Set the position explicitly: treat $eventId as the last event handled,
+     * so the next consume() starts strictly *after* it.
+     *
+     * The position is persisted immediately via Cursor::save() and mirrored
+     * in memory. $eventId must be a well-formed feed position, but does not
+     * need to currently exist in the feed — seeking to an id older than
+     * retention or newer than the tip is legal and simply positions relative
+     * to it, which is what makes seeking to a poison event's own id the way
+     * to step past it deliberately.
+     *
+     * @throws Exception\Invalid When $eventId is not a feed position (the tip sentinel included).
+     * @throws Exception When the cursor store cannot be written — a seek that
+     *         did not persist must not look like one that did, so the failure
+     *         is never swallowed and the in-memory position stays put.
+     */
+    public function seek(string $eventId): void
+    {
+        if (!Id::isValid($eventId)) {
+            throw new Exception\Invalid('Invalid feed event id: ' . $eventId);
+        }
+
+        $this->cursor->save($this->feed->getName(), $this->name, $eventId);
+
+        $this->position = $eventId;
+        $this->restored = true;
+    }
+
     public function reset(): void
     {
         $this->cursor->reset($this->feed->getName(), $this->name);

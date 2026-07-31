@@ -17,6 +17,11 @@
   draining the backlog. Rides a protocol extension: the `lastEventId` value
   `$`, resolved by the producer to the newest event as the request arrives.
   Also added `Feed::tip()`, the id of the newest event in a local journal.
+- Added `Consumer::seek(string $eventId)` — set the position explicitly: the
+  id is treated as the last event handled, persisted immediately, and the
+  next `consume()` starts strictly after it. The operational escape hatch for
+  a poison event: seek to the failing event's own id to step past it
+  deliberately.
 
 - **Breaking (wire format):** a feed batch on the wire is now the plain JSON
   array of CloudEvents that [http-feeds.org](https://www.http-feeds.org/)

@@ -278,6 +278,34 @@ try {
 Run **one process per consumer name.** Two sharing a name share one position, so
 the feed is split between them rather than delivered to both.
 
+### Moving the position by hand
+
+Two methods change a consumer's position outside the normal flow:
+
+- `reset()` forgets the position entirely — the next run starts from the
+  oldest retained event (or the tip, for a `Start::Tip` consumer).
+- `seek($eventId)` sets it to a specific point: the id is treated as the last
+  event handled, so the next run starts strictly *after* it. The seek is
+  persisted immediately, and a store failure surfaces as `Transport` — a seek
+  that did not persist never looks like one that did. The id must be well
+  formed but does not need to still exist in the feed.
+
+`seek()` is the escape hatch for a poison event. A handler that keeps failing
+blocks the feed by design, so stepping past it is a decision, made in code:
+catch the failure, log the event's id, and once you have decided the event
+must be skipped, seek to *its own id*:
+
+```php
+try {
+    $consumer->consume($handler);
+} catch (\Throwable $error) {
+    Console::error("[feed] blocked: {$error->getMessage()}");
+
+    // After investigating — this event cannot and should not be handled:
+    $consumer->seek($poisonEventId);
+}
+```
+
 ## What a handler must tolerate
 
 **A handler must be safe to run twice on the same event.** There are three
