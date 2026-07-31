@@ -7,7 +7,7 @@ namespace Utopia\Feed;
 use Utopia\CloudEvents\CloudEvent;
 
 // Server class: appends events to a feed this service owns.
-// The journal must be Appendable, so a remote feed cannot reach this at all.
+// The journal must be a Journal and Appendable, so a Remote cannot reach this at all.
 class Producer
 {
     /**

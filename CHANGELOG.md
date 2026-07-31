@@ -28,6 +28,16 @@
   loop also no longer oversleeps: it sleeps the remaining time when less than
   an interval is left, so a timeout is honoured to within scheduler precision
   instead of running up to one interval late.
+- **Breaking (renames):** every user-facing name now belongs to exactly one
+  side of the wire. `Journal\Http` is gone; its replacement is
+  `Utopia\Feed\Remote` — another service's feed, over HTTP — a standalone
+  class implementing the new `Readable` interface (`read`, `poll`, `tip`,
+  `getName`) rather than posing as a journal. `Consumer` accepts any
+  `Readable` (a `Remote`, or a local journal) instead of a `Feed`, and clamps
+  its own `batch`/`timeout`; `Feed` is server vocabulary, built over the
+  journal it serves. The protocol limits moved with the responsibility:
+  `Feed::MAX_BATCH`/`Feed::MAX_TIMEOUT` are now `Protocol::MAX_BATCH` and
+  `Protocol::MAX_TIMEOUT`.
 
 - **Breaking (wire format):** a feed batch on the wire is now the plain JSON
   array of CloudEvents that [http-feeds.org](https://www.http-feeds.org/)

@@ -12,8 +12,8 @@ use Utopia\Feed\Cursor\Memory as MemoryCursor;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
-use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
+use Utopia\Feed\Protocol;
 use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FailingCursor;
 use Utopia\Tests\Unit\Support\MidPollJournal;
@@ -21,8 +21,6 @@ use Utopia\Tests\Unit\Support\MidPollJournal;
 class ConsumerTest extends TestCase
 {
     private MemoryJournal $journal;
-
-    private Feed $feed;
 
     private Producer $producer;
 
@@ -32,13 +30,12 @@ class ConsumerTest extends TestCase
     {
         $this->journal = new MemoryJournal('edge');
         $this->producer = new Producer($this->journal, 'urn:test');
-        $this->feed = new Feed($this->journal);
         $this->cursor = new MemoryCursor();
     }
 
     private function consumer(?Cursor $cursor = null, int $batch = Consumer::BATCH): Consumer
     {
-        return new Consumer($this->feed, 'invalidator', $cursor ?? $this->cursor, $batch);
+        return new Consumer($this->journal, 'invalidator', $cursor ?? $this->cursor, $batch);
     }
 
     /**
@@ -204,6 +201,34 @@ class ConsumerTest extends TestCase
         $this->assertSame(3, $this->consumer()->consume(fn (CloudEvent $event) => null));
     }
 
+    /**
+     * The clamping the client-side Feed wrapper used to provide lives in the
+     * consumer now: whatever the constructor was given, a journal is never
+     * asked for more than the protocol allows.
+     */
+    public function testClampsBatchAndTimeoutToTheProtocolLimits(): void
+    {
+        $journal = new class ('edge') extends MemoryJournal {
+            public ?int $limit = null;
+
+            public ?int $timeout = null;
+
+            public function poll(?string $lastEventId, int $limit, int $timeout): array
+            {
+                $this->limit = $limit;
+                $this->timeout = $timeout;
+
+                return parent::poll($lastEventId, $limit, 0);
+            }
+        };
+
+        $consumer = new Consumer($journal, 'invalidator', $this->cursor, batch: 5_000, timeout: 120_000);
+        $consumer->consume(fn (CloudEvent $event) => null);
+
+        $this->assertSame(Protocol::MAX_BATCH, $journal->limit);
+        $this->assertSame(Protocol::MAX_TIMEOUT, $journal->timeout);
+    }
+
     public function testDrainsABacklogInBatches(): void
     {
         foreach (\range(1, 10) as $i) {
@@ -306,7 +331,7 @@ class ConsumerTest extends TestCase
         $this->producer->append('old-1');
         $this->producer->append('old-2');
 
-        $consumer = new Consumer($this->feed, 'notifier', $this->cursor, start: Start::Tip);
+        $consumer = new Consumer($this->journal, 'notifier', $this->cursor, start: Start::Tip);
 
         $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
         $this->assertNull($this->cursor->load('edge', 'notifier'), 'Skipping the backlog is not progress to commit');
@@ -322,7 +347,7 @@ class ConsumerTest extends TestCase
         (new Producer($journal, 'urn:test'))->append('old');
 
         $cursor = new MemoryCursor();
-        $consumer = new Consumer(new Feed($journal), 'notifier', $cursor, timeout: 5_000, start: Start::Tip);
+        $consumer = new Consumer($journal, 'notifier', $cursor, timeout: 5_000, start: Start::Tip);
 
         $seen = [];
         $count = $consumer->consume(function (CloudEvent $event) use (&$seen): void {
@@ -341,7 +366,7 @@ class ConsumerTest extends TestCase
 
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer($this->feed, 'invalidator', $this->cursor, start: Start::Tip);
+        $consumer = new Consumer($this->journal, 'invalidator', $this->cursor, start: Start::Tip);
 
         $this->assertSame(['b'], $this->drain($consumer), 'A restart must not skip the gap');
     }
@@ -352,7 +377,7 @@ class ConsumerTest extends TestCase
         $this->producer->append('b');
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer($this->feed, 'invalidator', $this->cursor, start: Start::Tip);
+        $consumer = new Consumer($this->journal, 'invalidator', $this->cursor, start: Start::Tip);
 
         $this->assertSame(['b'], $this->drain($consumer), 'The stored position still wins before the reset');
 
@@ -363,7 +388,7 @@ class ConsumerTest extends TestCase
 
     public function testTipStartOnAnEmptyFeedWaitsOutTheTimeoutEmpty(): void
     {
-        $consumer = new Consumer($this->feed, 'notifier', $this->cursor, timeout: 600, start: Start::Tip);
+        $consumer = new Consumer($this->journal, 'notifier', $this->cursor, timeout: 600, start: Start::Tip);
 
         $started = \microtime(true);
 
@@ -373,7 +398,7 @@ class ConsumerTest extends TestCase
 
     public function testTipStartOnAnEmptyFeedDeliversWhatLandsMidWait(): void
     {
-        $consumer = new Consumer(new Feed(new MidPollJournal('edge')), 'notifier', $this->cursor, timeout: 5_000, start: Start::Tip);
+        $consumer = new Consumer(new MidPollJournal('edge'), 'notifier', $this->cursor, timeout: 5_000, start: Start::Tip);
 
         $seen = [];
         $consumer->consume(function (CloudEvent $event) use (&$seen): void {
@@ -520,8 +545,8 @@ class ConsumerTest extends TestCase
     {
         $this->producer->append('a');
 
-        $one = new Consumer($this->feed, 'one', $this->cursor);
-        $two = new Consumer($this->feed, 'two', $this->cursor);
+        $one = new Consumer($this->journal, 'one', $this->cursor);
+        $two = new Consumer($this->journal, 'two', $this->cursor);
 
         $this->assertSame(1, $one->consume(fn (CloudEvent $event) => null));
         $this->assertSame(1, $two->consume(fn (CloudEvent $event) => null), 'The second consumer has its own position');
@@ -537,7 +562,7 @@ class ConsumerTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        new Consumer($this->feed, '', $this->cursor);
+        new Consumer($this->journal, '', $this->cursor);
     }
 
     public function testExposesItsName(): void
@@ -555,7 +580,7 @@ class ConsumerTest extends TestCase
         $this->producer->append('b');
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer(new Feed(new \Utopia\Feed\Journal\None('edge')), 'invalidator', $this->cursor);
+        $consumer = new Consumer(new \Utopia\Feed\Journal\None('edge'), 'invalidator', $this->cursor);
 
         $this->expectException(\Utopia\Feed\Exception\Unsupported::class);
 

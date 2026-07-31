@@ -73,26 +73,50 @@ runtime surprise.
 
 ### Consume
 
-A `Consumer` reads from where it last got to, hands each new event to your
-handler, and records how far it got:
+A `Consumer` pulls from a `Remote` — another service's feed, over HTTP — reads
+from where it last got to, hands each new event to your handler, and records
+how far it got in a `Cursor`:
 
 ```php
+use Utopia\Client;
+use Utopia\Client\Adapter\Curl\Client as Curl;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
+use Utopia\Feed\Remote;
 
-$consumer = new Consumer($feed, 'cache-invalidator', new Cursor\Cache($cache));
+$client = (new Client(new Curl()))
+    ->withHeaders(['x-appwrite-jwt' => $token])
+    ->withConnectionReuse();
+
+$remote = new Remote($client, 'https://cloud.example.com/v1/feeds', 'edge');
+
+$consumer = new Consumer($remote, 'cache-invalidator', new Cursor\Cache($cache));
 
 $handled = $consumer->consume(function (CloudEvent $event) use ($router) {
     $router->invalidate($event->data['tags'] ?? []);
 });
 ```
 
+Long polling is handled by the producer, so a poll is one held request rather
+than a client-side loop. `Remote` takes any
+[utopia-php/client](https://github.com/utopia-php/client) adapter, so a pooled or
+Swoole coroutine transport drops straight in. Leave the `Retry` decorator off: a
+failed read leaves the position where it was, so the next poll is already the
+retry.
+
+A consumer inside the producing service reads its own feed the same way —
+`Consumer` accepts anything `Readable`, so it takes the local journal directly:
+
+```php
+$consumer = new Consumer($journal, 'audit-log', new Cursor\Redis($redis));
+```
+
 Call `consume()` on a timer, or give the consumer a `timeout` and loop — each
 call then returns the moment an event arrives, or empty after the timeout:
 
 ```php
-$consumer = new Consumer($feed, 'cache-invalidator', $cursor, timeout: 20_000);
+$consumer = new Consumer($remote, 'cache-invalidator', $cursor, timeout: 20_000);
 
 while (true) {
     $consumer->consume($handler);
@@ -106,7 +130,7 @@ they happen — opts into starting at the tip instead:
 ```php
 use Utopia\Feed\Start;
 
-$consumer = new Consumer($feed, 'notifier', $cursor, timeout: 20_000, start: Start::Tip);
+$consumer = new Consumer($remote, 'notifier', $cursor, timeout: 20_000, start: Start::Tip);
 ```
 
 A stored position always wins; `Start::Tip` only applies on the first run, or
@@ -116,29 +140,6 @@ poll arrives, so new events land inside the held request rather than in the
 gap between polls. Against a producer that predates the tip extension, the
 first poll fails with a 4xx `Transport` error rather than silently replaying
 the backlog.
-
-### Consume another service's feed
-
-Same code, different journal — nothing above it knows the events arrive over the
-network:
-
-```php
-use Utopia\Client;
-use Utopia\Client\Adapter\Curl\Client as Curl;
-
-$client = (new Client(new Curl()))
-    ->withHeaders(['x-appwrite-jwt' => $token])
-    ->withConnectionReuse();
-
-$feed = new Feed(new Journal\Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
-```
-
-Long polling is handled by the producer, so a poll is one held request rather
-than a client-side loop. `Journal\Http` takes any
-[utopia-php/client](https://github.com/utopia-php/client) adapter, so a pooled or
-Swoole coroutine transport drops straight in. Leave the `Retry` decorator off: a
-failed read leaves the position where it was, so the next poll is already the
-retry.
 
 ### Serve a feed over HTTP
 
@@ -162,10 +163,9 @@ $response
 
 `serve()` extracts `lastEventId`, `limit` and `timeout` from the query,
 coerces their string values, applies the defaults, and clamps the batch to
-`Feed::MAX_BATCH` (1000 events) and the long-poll wait to `Feed::MAX_TIMEOUT`
-(30s), so a client cannot ask for more than the producer is willing to build
-or hold. A malformed `lastEventId` throws `Exception\Invalid` — catch it to
-answer 400.
+1000 events and the long-poll wait to 30 seconds, so a client cannot ask for
+more than the producer is willing to build or hold. A malformed `lastEventId`
+throws `Exception\Invalid` — catch it to answer 400.
 
 The response body is a bare JSON array of CloudEvents, as
 [http-feeds.org](https://www.http-feeds.org/) defines it — no envelope. An
@@ -218,16 +218,18 @@ usable prefix — does the read throw `Exception\Invalid`.
 
 ## Journals
 
-A journal is where a feed's events live. It returns the events after a given id;
-the ones that own their events also implement `Appendable` and assign the ids.
+A journal is where a feed's events live, on the server that owns it. Every
+journal is `Readable` — it returns the events after a given id — and
+`Appendable`, assigning the ids. (Reading another service's feed is not a
+journal's job: that is `Remote`, which is `Readable` and deliberately not
+`Appendable`.)
 
-| Journal | Use for | `Appendable` |
-| --- | --- | --- |
-| `Journal\Redis` | Producing a feed on a Redis stream | ✅ |
-| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection | ✅ |
-| `Journal\Http` | Consuming another service's feed | ❌ — it belongs to whoever appends to it |
-| `Journal\Memory` | Tests and single-process development | ✅ |
-| `Journal\None` | No backend configured — throws on use | ✅, and throws |
+| Journal | Use for |
+| --- | --- |
+| `Journal\Redis` | Producing a feed on a Redis stream |
+| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection |
+| `Journal\Memory` | Tests and single-process development |
+| `Journal\None` | No backend configured — throws on use |
 
 `Journal\Pool` is what most services producing a feed want: a long poll spans its
 whole timeout, and this one borrows a connection per read and gives it back while

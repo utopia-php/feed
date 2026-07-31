@@ -7,7 +7,7 @@ namespace Utopia\Feed;
 use Utopia\CloudEvents\CloudEvent;
 
 // Server interface: a journal that owns its events, so it can be appended to.
-// Journal\Http does not implement it — a consumer cannot write to someone else's feed.
+// Remote does not implement it — a consumer cannot write to someone else's feed.
 interface Appendable
 {
     /**

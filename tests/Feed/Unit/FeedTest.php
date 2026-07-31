@@ -118,7 +118,7 @@ class FeedTest extends TestCase
     {
         $this->producer->append('test');
 
-        $this->assertCount(1, $this->feed->read(null, Feed::MAX_BATCH * 10));
+        $this->assertCount(1, $this->feed->read(null, Protocol::MAX_BATCH * 10));
         $this->assertCount(1, $this->feed->read(null, 0));
         $this->assertCount(1, $this->feed->read(null, -5));
     }
@@ -430,13 +430,13 @@ class FeedTest extends TestCase
      */
     public function testAnOversizedLimitStillYieldsAnHonestCacheControl(): void
     {
-        foreach (\range(1, Feed::MAX_BATCH) as $i) {
+        foreach (\range(1, Protocol::MAX_BATCH) as $i) {
             $this->producer->append('event-' . $i);
         }
 
         $batch = $this->feed->serve(['limit' => '5000']);
 
-        $this->assertCount(Feed::MAX_BATCH, $batch);
+        $this->assertCount(Protocol::MAX_BATCH, $batch);
         $this->assertSame('public, max-age=31536000', $batch->cacheControl(public: true));
     }
 

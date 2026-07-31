@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
-// Server and client class: the read view of a feed — read and long-poll.
-// Server serves its own feed with this; client reads a remote one through Journal\Http.
+// Server class: the read view over the journal a service appends to — it
+// reads, long-polls, and serves the feed over HTTP with serve().
 class Feed
 {
-    public const int MAX_BATCH = 1000;
-
-    public const int MAX_TIMEOUT = 30_000;
-
-    public function __construct(protected readonly Journal $journal)
+    public function __construct(protected readonly Readable $journal)
     {
     }
 
@@ -32,19 +28,19 @@ class Feed
         return $this->journal->tip();
     }
 
-    public function read(?string $lastEventId = null, int $limit = self::MAX_BATCH): Batch
+    public function read(?string $lastEventId = null, int $limit = Protocol::MAX_BATCH): Batch
     {
-        $limit = \max(1, \min($limit, self::MAX_BATCH));
+        $limit = \max(1, \min($limit, Protocol::MAX_BATCH));
 
         return new Batch($this->journal->read($lastEventId, $limit), $limit);
     }
 
-    public function poll(?string $lastEventId = null, int $limit = self::MAX_BATCH, int $timeout = 0): Batch
+    public function poll(?string $lastEventId = null, int $limit = Protocol::MAX_BATCH, int $timeout = 0): Batch
     {
-        $limit = \max(1, \min($limit, self::MAX_BATCH));
+        $limit = \max(1, \min($limit, Protocol::MAX_BATCH));
 
         return new Batch(
-            $this->journal->poll($lastEventId, $limit, \max(0, \min($timeout, self::MAX_TIMEOUT))),
+            $this->journal->poll($lastEventId, $limit, \max(0, \min($timeout, Protocol::MAX_TIMEOUT))),
             $limit,
         );
     }
@@ -73,7 +69,7 @@ class Feed
 
         return $this->poll(
             $lastEventId,
-            \is_numeric($limit) ? (int) $limit : self::MAX_BATCH,
+            \is_numeric($limit) ? (int) $limit : Protocol::MAX_BATCH,
             \is_numeric($timeout) ? (int) $timeout : 0,
         );
     }

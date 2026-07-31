@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Utopia\Feed;
 
 // Client class: the pull loop — reads what it has not seen and records how far it got.
-// Also runs server-side, when a job inside the producer consumes the feed it produces.
 class Consumer
 {
     public const int BATCH = 100;
@@ -14,8 +13,12 @@ class Consumer
 
     private bool $restored = false;
 
+    /**
+     * @param Readable $feed The feed to pull from — a Remote for another
+     *        service's feed, or a local journal for one this service owns.
+     */
     public function __construct(
-        protected readonly Feed $feed,
+        protected readonly Readable $feed,
         protected readonly string $name,
         protected readonly Cursor $cursor,
         protected readonly int $batch = self::BATCH,
@@ -34,9 +37,13 @@ class Consumer
 
     public function consume(callable $handler): int
     {
-        $batch = $this->feed->poll($this->position() ?? $this->origin(), $this->batch, $this->timeout);
+        $events = $this->feed->poll(
+            $this->position() ?? $this->origin(),
+            \max(1, \min($this->batch, Protocol::MAX_BATCH)),
+            \max(0, \min($this->timeout, Protocol::MAX_TIMEOUT)),
+        );
 
-        if ($batch->isEmpty()) {
+        if ($events === []) {
             return 0;
         }
 
@@ -44,7 +51,7 @@ class Consumer
         $processed = null;
         $failure = null;
 
-        foreach ($batch as $event) {
+        foreach ($events as $event) {
             try {
                 $handler($event);
             } catch (\Throwable $error) {

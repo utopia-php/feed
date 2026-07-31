@@ -32,6 +32,12 @@ final class Protocol
 
     public const int TIMEOUT_MARGIN = 10_000;
 
+    /** The most events one batch may carry — servers clamp `limit` to this. */
+    public const int MAX_BATCH = 1000;
+
+    /** The longest a long poll may hold a connection, in milliseconds. */
+    public const int MAX_TIMEOUT = 30_000;
+
     /** The context attributes this library models; the rest are extensions. */
     private const array ATTRIBUTES = [
         'specversion',

@@ -2,31 +2,40 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Journal;
+namespace Utopia\Feed;
 
 use Psr\Http\Client\ClientExceptionInterface;
 use Utopia\Client\Adapter;
 use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Exception\Unsupported;
-use Utopia\Feed\Journal;
-use Utopia\Feed\Protocol;
 use Utopia\Psr7\Header;
 use Utopia\Psr7\Method;
 use Utopia\Psr7\Request\Factory as RequestFactory;
 
-class Http extends Journal
+// Client class: another service's feed, read over the wire.
+// Deliberately Readable and not Appendable — events are appended by whoever
+// owns the feed, so producing into a remote one is a type error, not a request.
+class Remote implements Readable
 {
     private readonly RequestFactory $requests;
 
     public function __construct(
         protected readonly Adapter $client,
         protected readonly string $endpoint,
-        string $name,
+        protected readonly string $name,
     ) {
-        parent::__construct($name);
+        if ($name === '') {
+            throw new Invalid('Feed name is required');
+        }
 
         $this->requests = new RequestFactory();
+    }
+
+    public function getName(): string
+    {
+        return $this->name;
     }
 
     /**
@@ -39,12 +48,12 @@ class Http extends Journal
         throw new Unsupported("The {$this->name} feed is remote; its producer resolves the tip");
     }
 
-    public function read(?string $lastEventId, int $limit): array
+    public function read(?string $lastEventId = null, int $limit = Protocol::MAX_BATCH): array
     {
         return $this->fetch($lastEventId, $limit, 0);
     }
 
-    public function poll(?string $lastEventId, int $limit, int $timeout): array
+    public function poll(?string $lastEventId = null, int $limit = Protocol::MAX_BATCH, int $timeout = 0): array
     {
         return $this->fetch($lastEventId, $limit, $timeout);
     }

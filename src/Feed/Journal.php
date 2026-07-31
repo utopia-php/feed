@@ -8,9 +8,9 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 
 // Server class: durable storage for the events — Journal\Redis, Pool, Memory.
-// The one client-side journal is Journal\Http, which reads another service's
-// feed over the wire. Journals that own their events also implement Appendable.
-abstract class Journal
+// A journal owns its events, so every journal also implements Appendable;
+// reading another service's feed over the wire is Remote's job.
+abstract class Journal implements Readable
 {
     protected const int POLL_INTERVAL = 500; // ms
 
@@ -42,11 +42,6 @@ abstract class Journal
     /** @return list<CloudEvent> */
     abstract public function read(?string $lastEventId, int $limit): array;
 
-    /**
-     * The id of the newest event, or null when the feed is empty.
-     *
-     * @throws Exception
-     */
     abstract public function tip(): ?string;
 
     /**
@@ -62,8 +57,8 @@ abstract class Journal
 
     /**
      * Wait for events, re-reading on an interval until some land or the
-     * deadline passes. Journal\Http overrides this: there the producer does the
-     * waiting, so a poll is one held request.
+     * deadline passes. (Remote does not share this loop: there the producer
+     * does the waiting, so a poll is one held request.)
      *
      * @return list<CloudEvent>
      */

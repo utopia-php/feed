@@ -7,42 +7,42 @@ namespace Utopia\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Utopia\Client;
-use Utopia\Feed\Journal\Http;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
+use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
+use Utopia\Feed\Remote;
 use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FakeTransport;
 use Utopia\Tests\Unit\Support\FeedServer;
 use Utopia\Tests\Unit\Support\MidPollJournal;
 
-class HttpJournalTest extends TestCase
+class RemoteTest extends TestCase
 {
     /**
      * @param list<ResponseInterface|\Throwable> $responses
-     * @return array{Feed, FakeTransport}
+     * @return array{Remote, FakeTransport}
      */
-    private function feed(array $responses = []): array
+    private function remote(array $responses = []): array
     {
         $transport = FakeTransport::of($responses);
-        $journal = new Http($transport, 'https://cloud.example.com/v1/feeds', 'edge');
 
-        return [new Feed($journal), $transport];
+        return [new Remote($transport, 'https://cloud.example.com/v1/feeds', 'edge'), $transport];
     }
 
     public function testReadsAFeedOverHttp(): void
     {
-        [$feed] = $this->feed([FakeTransport::json(Protocol::encode([
+        [$remote] = $this->remote([FakeTransport::json(Protocol::encode([
             new CloudEvent(id: '1-0', type: 'io.appwrite.edge.invalidate-rule', source: 'urn:test', data: ['tags' => ['domain' => 'example.com']]),
             new CloudEvent(id: '1-1', type: 'io.appwrite.edge.invalidate', source: 'urn:test'),
         ]))]);
 
-        $events = \array_values(\iterator_to_array($feed->read()));
+        $events = $remote->read();
 
         $this->assertCount(2, $events);
         $this->assertSame('1-0', $events[0]->id);
@@ -51,9 +51,9 @@ class HttpJournalTest extends TestCase
 
     public function testAppendsTheFeedNameToTheEndpoint(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
-        $feed->read();
+        $remote->read();
 
         $this->assertStringStartsWith('https://cloud.example.com/v1/feeds/edge', $transport->recorder->last()['uri']);
     }
@@ -62,7 +62,7 @@ class HttpJournalTest extends TestCase
     {
         $transport = FakeTransport::of([]);
 
-        (new Feed(new Http($transport, 'https://cloud.example.com/v1/feeds/', 'a b/c')))->read();
+        (new Remote($transport, 'https://cloud.example.com/v1/feeds/', 'a b/c'))->read();
 
         $this->assertStringStartsWith(
             'https://cloud.example.com/v1/feeds/a%20b%2Fc',
@@ -70,20 +70,47 @@ class HttpJournalTest extends TestCase
         );
     }
 
+    public function testRejectsAnEmptyFeedName(): void
+    {
+        $this->expectException(Invalid::class);
+
+        new Remote(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds', '');
+    }
+
+    public function testExposesTheFeedItReads(): void
+    {
+        [$remote] = $this->remote();
+
+        $this->assertSame('edge', $remote->getName());
+    }
+
+    /**
+     * The tip is the producer's to resolve — a consumer starting at the tip
+     * sends the sentinel instead of asking for the newest id first.
+     */
+    public function testARemoteFeedHasNoLocalTip(): void
+    {
+        [$remote] = $this->remote();
+
+        $this->expectException(Unsupported::class);
+
+        $remote->tip();
+    }
+
     public function testReadsWithGet(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
-        $feed->read();
+        $remote->read();
 
         $this->assertSame('GET', $transport->recorder->last()['method']);
     }
 
     public function testAsksForTheFeedMediaType(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
-        $feed->read();
+        $remote->read();
 
         $this->assertSame(Protocol::MEDIA_TYPE, $transport->recorder->last()['headers']['Accept'] ?? null);
         $this->assertSame('application/cloudevents-batch+json', Protocol::MEDIA_TYPE);
@@ -91,9 +118,9 @@ class HttpJournalTest extends TestCase
 
     public function testSendsThePositionAndLimit(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
-        $feed->read('1-0', 250);
+        $remote->read('1-0', 250);
 
         $uri = $transport->recorder->last()['uri'];
 
@@ -101,11 +128,11 @@ class HttpJournalTest extends TestCase
         $this->assertStringContainsString('limit=250', $uri);
     }
 
-    public function testSendsNoParametersOnAFirstFullRead(): void
+    public function testSendsNoPositionOnAFirstFullRead(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
-        $feed->read(null, Feed::MAX_BATCH);
+        $remote->read(null, Protocol::MAX_BATCH);
 
         $this->assertStringNotContainsString('lastEventId', $transport->recorder->last()['uri']);
     }
@@ -116,10 +143,10 @@ class HttpJournalTest extends TestCase
      */
     public function testDelegatesLongPollingToTheProducer(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
         $started = \microtime(true);
-        $feed->poll(null, 100, 5000);
+        $remote->poll(null, 100, 5000);
 
         $this->assertLessThan(1, \microtime(true) - $started, 'Must not wait client-side');
         $this->assertCount(1, $transport->recorder->requests, 'Must not poll in a loop');
@@ -133,9 +160,9 @@ class HttpJournalTest extends TestCase
      */
     public function testAllowsTheClientLongerThanTheLongPollTimeout(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
-        $feed->poll(null, 100, 5000);
+        $remote->poll(null, 100, 5000);
 
         // Seconds, which is what the client takes; the protocol margin is in
         // milliseconds, like the timeout the producer is given.
@@ -145,9 +172,9 @@ class HttpJournalTest extends TestCase
 
     public function testLeavesTheConfiguredTimeoutAloneWhenNotLongPolling(): void
     {
-        [$feed, $transport] = $this->feed();
+        [$remote, $transport] = $this->remote();
 
-        $feed->read();
+        $remote->read();
 
         $this->assertNull($transport->recorder->last()['timeout'], 'A plain read must not override the client');
     }
@@ -159,10 +186,10 @@ class HttpJournalTest extends TestCase
      */
     public function testCarriesTheStatusOfARejectedRead(): void
     {
-        [$feed] = $this->feed([FakeTransport::json([], 404)]);
+        [$remote] = $this->remote([FakeTransport::json([], 404)]);
 
         try {
-            $feed->read();
+            $remote->read();
             $this->fail('A 404 should have been raised');
         } catch (Transport $error) {
             $this->assertSame(404, $error->getCode());
@@ -171,10 +198,10 @@ class HttpJournalTest extends TestCase
 
     public function testRaisesServerErrors(): void
     {
-        [$feed] = $this->feed([FakeTransport::json([], 503)]);
+        [$remote] = $this->remote([FakeTransport::json([], 503)]);
 
         try {
-            $feed->read();
+            $remote->read();
             $this->fail('A 503 should have been raised');
         } catch (Transport $error) {
             $this->assertSame(503, $error->getCode());
@@ -182,45 +209,45 @@ class HttpJournalTest extends TestCase
     }
 
     /**
-     * PSR-18 returns 4xx and 5xx rather than throwing, so the journal has to
+     * PSR-18 returns 4xx and 5xx rather than throwing, so the transport has to
      * check the status itself — a producer error must not read as an empty
      * batch, which the consumer would take for "caught up".
      */
     public function testAnErrorStatusIsNotMistakenForAnEmptyBatch(): void
     {
-        [$feed] = $this->feed([FakeTransport::json([], 500)]);
+        [$remote] = $this->remote([FakeTransport::json([], 500)]);
 
         $this->expectException(Transport::class);
 
-        $feed->read();
+        $remote->read();
     }
 
     public function testWrapsATransportFailure(): void
     {
-        [$feed] = $this->feed([FakeTransport::offline()]);
+        [$remote] = $this->remote([FakeTransport::offline()]);
 
         $this->expectException(Transport::class);
         $this->expectExceptionMessageMatches('/Connection refused/');
 
-        $feed->read();
+        $remote->read();
     }
 
     public function testWrapsABodyThatIsNotJson(): void
     {
-        [$feed] = $this->feed([FakeTransport::raw('<html>502 Bad Gateway</html>')]);
+        [$remote] = $this->remote([FakeTransport::raw('<html>502 Bad Gateway</html>')]);
 
         $this->expectException(Transport::class);
 
-        $feed->read();
+        $remote->read();
     }
 
     public function testRejectsABodyThatIsNotABatch(): void
     {
-        [$feed] = $this->feed([FakeTransport::raw('"a string"')]);
+        [$remote] = $this->remote([FakeTransport::raw('"a string"')]);
 
         $this->expectException(Invalid::class);
 
-        $feed->read();
+        $remote->read();
     }
 
     /**
@@ -233,21 +260,21 @@ class HttpJournalTest extends TestCase
         $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-0', type: 'a', source: 'urn:test')]))]);
 
         $client = (new Client($transport))->withHeaders(['x-appwrite-jwt' => 'token']);
-        $feed = new Feed(new Http($client, 'https://cloud.example.com/v1/feeds', 'edge'));
+        $remote = new Remote($client, 'https://cloud.example.com/v1/feeds', 'edge');
 
-        $events = $feed->read();
+        $events = $remote->read();
 
         $this->assertCount(1, $events);
         $this->assertSame('token', $transport->recorder->last()['headers']['x-appwrite-jwt'] ?? null);
     }
 
     /**
-     * The point of this journal: a remote feed is consumed with exactly the
+     * The point of this class: a remote feed is consumed with exactly the
      * code a local one is.
      */
     public function testConsumesARemoteFeedThroughTheSameConsumer(): void
     {
-        [$feed, $transport] = $this->feed([
+        [$remote, $transport] = $this->remote([
             FakeTransport::json(Protocol::encode([
                 new CloudEvent(id: '1-0', type: 'a', source: 'urn:test'),
                 new CloudEvent(id: '1-1', type: 'b', source: 'urn:test'),
@@ -257,7 +284,7 @@ class HttpJournalTest extends TestCase
         ]);
 
         $cursor = new MemoryCursor();
-        $consumer = new Consumer($feed, 'invalidator', $cursor);
+        $consumer = new Consumer($remote, 'invalidator', $cursor);
 
         $seen = [];
         $handler = function (CloudEvent $event) use (&$seen): void {
@@ -286,8 +313,8 @@ class HttpJournalTest extends TestCase
         $producer->append('old');
 
         $server = new FeedServer(new Feed($journal));
-        $feed = new Feed(new Http($server, 'https://cloud.example.com/v1/feeds', 'edge'));
-        $consumer = new Consumer($feed, 'notifier', new MemoryCursor(), timeout: 5_000, start: Start::Tip);
+        $remote = new Remote($server, 'https://cloud.example.com/v1/feeds', 'edge');
+        $consumer = new Consumer($remote, 'notifier', new MemoryCursor(), timeout: 5_000, start: Start::Tip);
 
         $seen = [];
         $handler = function (CloudEvent $event) use (&$seen): void {

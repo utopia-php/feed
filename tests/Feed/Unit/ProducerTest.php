@@ -10,10 +10,10 @@ use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Id;
-use Utopia\Feed\Journal\Http;
 use Utopia\Feed\Journal\Memory;
 use Utopia\Feed\Journal\None;
 use Utopia\Feed\Producer;
+use Utopia\Feed\Remote;
 use Utopia\Tests\Unit\Support\FakeTransport;
 
 class ProducerTest extends TestCase
@@ -115,18 +115,18 @@ class ProducerTest extends TestCase
     }
 
     /**
-     * A feed read over HTTP belongs to whoever appends to it, so it is not
-     * Appendable — the mistake is a type error at construction rather than an
-     * exception once an event is already in hand.
+     * A remote feed belongs to whoever appends to it, so Remote is neither a
+     * Journal nor Appendable — the mistake is a type error at construction
+     * rather than an exception once an event is already in hand.
      */
-    public function testAJournalThatCannotBeAppendedToIsRejectedOnConstruction(): void
+    public function testARemoteFeedIsRejectedOnConstruction(): void
     {
-        $journal = new Http(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds', 'edge');
+        $remote = new Remote(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds', 'edge');
 
         $this->expectException(\TypeError::class);
 
         // @phpstan-ignore argument.type
-        new Producer($journal, 'urn:appwrite:edge:fra');
+        new Producer($remote, 'urn:appwrite:edge:fra');
     }
 
     public function testAFeedWithNoBackendFailsLoudlyRatherThanDroppingEvents(): void

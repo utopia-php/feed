@@ -7,7 +7,6 @@ namespace Utopia\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Utopia\Cache\Adapter\Memory as CacheMemory;
 use Utopia\Cache\Cache as UtopiaCache;
-use Utopia\Feed\Journal\Http;
 use Utopia\Feed\Journal\Memory as MemoryJournal;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
@@ -15,6 +14,7 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
+use Utopia\Feed\Remote;
 use Utopia\Tests\Unit\Support\FeedServer;
 
 /**
@@ -27,7 +27,7 @@ class RoundTripTest extends TestCase
 {
     private Producer $producer;
 
-    private Feed $consumerFeed;
+    private Remote $remote;
 
     private FeedServer $server;
 
@@ -39,16 +39,14 @@ class RoundTripTest extends TestCase
         $this->producer = new Producer($journal, 'urn:appwrite:cloud:fra');
         $this->server = new FeedServer(new Feed($journal));
 
-        $this->consumerFeed = new Feed(
-            new Http($this->server, 'https://cloud.example.com/v1/feeds', 'edge')
-        );
+        $this->remote = new Remote($this->server, 'https://cloud.example.com/v1/feeds', 'edge');
 
         $this->cursor = new CacheCursor(new UtopiaCache(new CacheMemory()));
     }
 
     private function consumer(string $name = 'invalidator', int $batch = Consumer::BATCH): Consumer
     {
-        return new Consumer($this->consumerFeed, $name, $this->cursor, $batch);
+        return new Consumer($this->remote, $name, $this->cursor, $batch);
     }
 
     public function testAnEventSurvivesTheWholeTrip(): void

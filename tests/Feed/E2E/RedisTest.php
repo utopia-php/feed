@@ -260,7 +260,8 @@ class RedisTest extends TestCase
 
     public function testConsumesThroughAPersistedCursor(): void
     {
-        [$producer, $feed] = $this->feedAndProducer();
+        $journal = new RedisJournal($this->redis, $this->name);
+        $producer = new Producer($journal, 'urn:test:e2e');
         $cursor = new RedisCursor($this->redis);
 
         $producer->append('a');
@@ -271,40 +272,42 @@ class RedisTest extends TestCase
             $seen[] = $event->type;
         };
 
-        $this->assertSame(2, (new Consumer($feed, 'invalidator', $cursor))->consume($handler));
+        $this->assertSame(2, (new Consumer($journal, 'invalidator', $cursor))->consume($handler));
         $this->assertSame($last, $cursor->load($this->name, 'invalidator'));
 
         // A second Consumer stands in for a restart: it has no in-memory
         // position, so it has to pick the stored one up to avoid replaying.
-        $this->assertSame(0, (new Consumer($feed, 'invalidator', $cursor))->consume($handler));
+        $this->assertSame(0, (new Consumer($journal, 'invalidator', $cursor))->consume($handler));
         $this->assertSame(['a', 'b'], $seen);
     }
 
     public function testASecondConsumerOfTheSameFeedGetsItsOwnPosition(): void
     {
-        [$producer, $feed] = $this->feedAndProducer();
+        $journal = new RedisJournal($this->redis, $this->name);
+        $producer = new Producer($journal, 'urn:test:e2e');
         $cursor = new RedisCursor($this->redis);
 
         $producer->append('a');
 
-        $this->assertSame(1, (new Consumer($feed, 'one', $cursor))->consume(fn (CloudEvent $e) => null));
-        $this->assertSame(1, (new Consumer($feed, 'two', $cursor))->consume(fn (CloudEvent $e) => null));
+        $this->assertSame(1, (new Consumer($journal, 'one', $cursor))->consume(fn (CloudEvent $e) => null));
+        $this->assertSame(1, (new Consumer($journal, 'two', $cursor))->consume(fn (CloudEvent $e) => null));
     }
 
     public function testResetReplaysTheRetainedFeed(): void
     {
-        [$producer, $feed] = $this->feedAndProducer();
+        $journal = new RedisJournal($this->redis, $this->name);
+        $producer = new Producer($journal, 'urn:test:e2e');
         $cursor = new RedisCursor($this->redis);
 
         $producer->append('a');
         $producer->append('b');
 
-        $consumer = new Consumer($feed, 'invalidator', $cursor);
+        $consumer = new Consumer($journal, 'invalidator', $cursor);
         $consumer->consume(fn (CloudEvent $e) => null);
         $consumer->reset();
 
         $this->assertNull($cursor->load($this->name, 'invalidator'));
-        $this->assertSame(2, (new Consumer($feed, 'invalidator', $cursor))->consume(fn (CloudEvent $e) => null));
+        $this->assertSame(2, (new Consumer($journal, 'invalidator', $cursor))->consume(fn (CloudEvent $e) => null));
     }
 
     public function testCursorsAreStoredUnderTheFeedTheyBelongTo(): void
