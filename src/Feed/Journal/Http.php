@@ -10,7 +10,6 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Journal;
 use Utopia\Feed\Protocol;
-use Utopia\Psr7\ContentType;
 use Utopia\Psr7\Header;
 use Utopia\Psr7\Method;
 use Utopia\Psr7\Request\Factory as RequestFactory;
@@ -46,11 +45,13 @@ class Http extends Journal
     {
         $url = $this->url();
 
+        // The Content-Type of the response is deliberately not checked: many
+        // servers answer application/json, and the body shape is what matters.
         $request = $this->requests->query(
             Method::GET,
             $url,
             Protocol::query($lastEventId, $limit, $timeout),
-            [Header::ACCEPT => ContentType::JSON],
+            [Header::ACCEPT => Protocol::MEDIA_TYPE],
         );
 
         // A long poll needs a deadline past the one it asked the producer for,

@@ -145,9 +145,21 @@ $events = $feed->poll(
 );
 
 $response
+    ->addHeader('Content-Type', Protocol::MEDIA_TYPE)
     ->addHeader('Cache-Control', Protocol::cacheControl(\count($events), $limit))
     ->json(Protocol::encode($events));
 ```
+
+The response body is a bare JSON array of CloudEvents, as
+[http-feeds.org](https://www.http-feeds.org/) defines it — no envelope. An
+empty array means the consumer is caught up. The media type is
+`application/cloudevents-batch+json` (`Protocol::MEDIA_TYPE`); on receipt this
+library only checks the body shape, so a feed answering `application/json`
+still reads fine.
+
+The spec defines two query parameters: `lastEventId` and `timeout`. The
+`limit` parameter is this library's extension beyond the spec — a
+spec-compliant consumer simply never sends it, and gets full batches.
 
 Cap the limit yourself with `Feed::MAX_BATCH` before the call, so the number
 that reaches `cacheControl()` is the one the batch was actually built with — a

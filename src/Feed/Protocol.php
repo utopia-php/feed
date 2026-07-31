@@ -14,8 +14,7 @@ final class Protocol
     public const string PARAM_LIMIT = 'limit';
     public const string PARAM_TIMEOUT = 'timeout';
 
-    public const string KEY_EVENTS = 'events';
-    public const string KEY_TOTAL = 'total';
+    public const string MEDIA_TYPE = 'application/cloudevents-batch+json';
 
     public const string CACHE_IMMUTABLE = 'max-age=31536000';
     public const string CACHE_NONE = 'no-store';
@@ -58,15 +57,15 @@ final class Protocol
     }
 
     /**
+     * A batch on the wire is a plain array of CloudEvents — no envelope. An
+     * empty feed serializes to `[]`, which the spec reads as "you are caught up".
+     *
      * @param list<CloudEvent> $events
-     * @return array{total: int, events: list<array<array-key, mixed>>}
+     * @return list<array<array-key, mixed>>
      */
     public static function encode(array $events): array
     {
-        return [
-            self::KEY_TOTAL => \count($events),
-            self::KEY_EVENTS => \array_map(static fn (CloudEvent $event): array => $event->toArray(), $events),
-        ];
+        return \array_map(static fn (CloudEvent $event): array => $event->toArray(), $events);
     }
 
     /**
@@ -88,19 +87,14 @@ final class Protocol
             throw new Invalid('Expected a feed batch, got ' . \get_debug_type($payload));
         }
 
-        if (!\array_key_exists(self::KEY_EVENTS, $payload)) {
-            throw new Invalid('Feed batch is missing the "' . self::KEY_EVENTS . '" field');
-        }
-
-        $raw = $payload[self::KEY_EVENTS];
-        if (!\is_array($raw)) {
-            throw new Invalid('Feed batch has a malformed "' . self::KEY_EVENTS . '" field');
+        if (!\array_is_list($payload)) {
+            throw new Invalid('Expected a feed batch as a plain array of events');
         }
 
         $events = [];
 
         /** @var mixed $event */
-        foreach ($raw as $event) {
+        foreach ($payload as $event) {
             try {
                 if (!\is_array($event)) {
                     throw new Invalid('Feed batch contains an entry that is not an event');

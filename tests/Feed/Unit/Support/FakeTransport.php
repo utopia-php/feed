@@ -31,7 +31,7 @@ class FakeTransport extends FakeClient
     }
 
     /**
-     * @param array<string, mixed> $body
+     * @param array<array-key, mixed> $body
      */
     public static function json(array $body, int $statusCode = 200): ResponseInterface
     {
@@ -67,6 +67,6 @@ class FakeTransport extends FakeClient
             throw $response;
         }
 
-        return $response ?? self::json(['total' => 0, 'events' => []]);
+        return $response ?? self::json([]);
     }
 }

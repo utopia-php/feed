@@ -27,23 +27,23 @@ class ProtocolTest extends TestCase
         ], Protocol::query('1-0', 500, 20000));
     }
 
-    public function testEncodesABatch(): void
+    public function testEncodesABatchAsAPlainArrayOfEvents(): void
     {
         $payload = Protocol::encode([
             new CloudEvent(id: '1-0', type: 'a', data: ['x' => 1], source: 'urn:test', subject: 's', time: 't'),
             new CloudEvent(id: '1-1', type: 'b', source: 'urn:test'),
         ]);
 
-        $this->assertSame(2, $payload['total']);
-        $this->assertCount(2, $payload['events']);
-        $this->assertSame('1-0', $payload['events'][0]['id']);
-        $this->assertSame(['x' => 1], $payload['events'][0]['data']);
-        $this->assertSame('1.0', $payload['events'][0]['specversion']);
+        $this->assertTrue(\array_is_list($payload), 'A batch is a plain array — the spec defines no envelope');
+        $this->assertCount(2, $payload);
+        $this->assertSame('1-0', $payload[0]['id']);
+        $this->assertSame(['x' => 1], $payload[0]['data']);
+        $this->assertSame('1.0', $payload[0]['specversion']);
     }
 
-    public function testEncodesAnEmptyBatch(): void
+    public function testEncodesAnEmptyBatchAsAnEmptyArray(): void
     {
-        $this->assertSame(['total' => 0, 'events' => []], Protocol::encode([]));
+        $this->assertSame([], Protocol::encode([]));
     }
 
     public function testDecodesWhatItEncoded(): void
@@ -58,15 +58,14 @@ class ProtocolTest extends TestCase
 
     public function testDecodesAnEmptyBatch(): void
     {
-        $this->assertSame([], Protocol::decode(['total' => 0, 'events' => []]));
+        $this->assertSame([], Protocol::decode([]));
     }
 
     /**
-     * An empty batch means "you are caught up". A response with no `events`
-     * field at all means "you did not reach the feed" — a misrouted request, a
-     * proxy's JSON error page, an endpoint that moved. Defaulting the missing
-     * field would make those indistinguishable, and a consumer would sit
-     * quietly at a position that never advances again.
+     * An empty batch means "you are caught up". A JSON object means "you did
+     * not reach the feed" — a misrouted request, a proxy's JSON error page, an
+     * endpoint that moved. Reading one as an empty batch would leave a
+     * consumer sitting quietly at a position that never advances again.
      *
      * @dataProvider notBatches
      */
@@ -83,8 +82,7 @@ class ProtocolTest extends TestCase
     public static function notBatches(): array
     {
         return [
-            'empty object' => [[]],
-            'total but no events' => [['total' => 0]],
+            'the old envelope' => [['total' => 0, 'events' => []]],
             'some other API' => [['data' => [], 'status' => 'ok']],
             'an error body' => [['message' => 'Not found', 'code' => 404]],
         ];
@@ -95,13 +93,6 @@ class ProtocolTest extends TestCase
         $this->expectException(Invalid::class);
 
         Protocol::decode('not a batch');
-    }
-
-    public function testRejectsAMalformedEventsField(): void
-    {
-        $this->expectException(Invalid::class);
-
-        Protocol::decode(['events' => 'nope']);
     }
 
     /**
@@ -129,12 +120,10 @@ class ProtocolTest extends TestCase
     public function testKeepsTheEventsBeforeAnUndecodableOne(): void
     {
         $events = Protocol::decode([
-            'events' => [
-                self::raw('1-0', 'a'),
-                self::raw('1-1', 'b'),
-                self::raw('', 'no id'),
-                self::raw('1-3', 'd'),
-            ],
+            self::raw('1-0', 'a'),
+            self::raw('1-1', 'b'),
+            self::raw('', 'no id'),
+            self::raw('1-3', 'd'),
         ]);
 
         $this->assertCount(2, $events);
@@ -145,19 +134,19 @@ class ProtocolTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        Protocol::decode(['events' => [self::raw('', 'no id'), self::raw('1-1', 'b')]]);
+        Protocol::decode([self::raw('', 'no id'), self::raw('1-1', 'b')]);
     }
 
     public function testFailsWhenTheFirstEntryIsNotAnEvent(): void
     {
         $this->expectException(Invalid::class);
 
-        Protocol::decode(['events' => ['a string']]);
+        Protocol::decode(['a string']);
     }
 
     public function testKeepsTheEventsBeforeAnEntryThatIsNotAnEvent(): void
     {
-        $events = Protocol::decode(['events' => [self::raw('1-0', 'a'), 'a string']]);
+        $events = Protocol::decode([self::raw('1-0', 'a'), 'a string']);
 
         $this->assertCount(1, $events);
     }
@@ -171,7 +160,7 @@ class ProtocolTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        Protocol::decode(['events' => [['id' => '1-0', 'type' => 'a']]]);
+        Protocol::decode([['id' => '1-0', 'type' => 'a']]);
     }
 
     /**
@@ -183,18 +172,30 @@ class ProtocolTest extends TestCase
     public function testSurvivesAProducerThatMovedAhead(): void
     {
         $events = Protocol::decode([
-            'events' => [
-                self::raw('1-0', 'a', [
-                    'specversion' => '1.1',
-                    'somethingnew' => 'ignored',
-                    'traceparent' => '00-abc-def-01',
-                ]),
-            ],
+            self::raw('1-0', 'a', [
+                'specversion' => '1.1',
+                'somethingnew' => 'ignored',
+                'traceparent' => '00-abc-def-01',
+            ]),
         ]);
 
         $this->assertCount(1, $events);
         $this->assertSame('1.1', $events[0]->specversion);
         $this->assertSame('00-abc-def-01', $events[0]->extensions['traceparent']);
+    }
+
+    /**
+     * The spec's optional compaction/deletion feature marks an event with a
+     * `method` attribute. This library does not implement the feature, but a
+     * feed that uses it must still be readable — the attribute rides along as
+     * an extension rather than breaking the batch.
+     */
+    public function testAnEventCarryingTheSpecsMethodAttributeDecodes(): void
+    {
+        $events = Protocol::decode([self::raw('1-0', 'a', ['method' => 'DELETE'])]);
+
+        $this->assertCount(1, $events);
+        $this->assertSame('DELETE', $events[0]->extensions['method']);
     }
 
     /**

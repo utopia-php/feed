@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking (wire format):** a feed batch on the wire is now the plain JSON
+  array of CloudEvents that [http-feeds.org](https://www.http-feeds.org/)
+  defines — the `{total, events}` envelope is gone, and an empty feed
+  serializes to `[]`. `Protocol::encode()` returns the bare array,
+  `Protocol::decode()` expects one, and the HTTP journal asks for the spec's
+  `application/cloudevents-batch+json` media type (`Protocol::MEDIA_TYPE`).
+  Both sides of a feed must move together.
+
 ## 0.1.0
 
 Initial release.

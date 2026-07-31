@@ -75,13 +75,14 @@ class HttpJournalTest extends TestCase
         $this->assertSame('GET', $transport->recorder->last()['method']);
     }
 
-    public function testAsksForJson(): void
+    public function testAsksForTheFeedMediaType(): void
     {
         [$feed, $transport] = $this->feed();
 
         $feed->read();
 
-        $this->assertSame('application/json', $transport->recorder->last()['headers']['Accept'] ?? null);
+        $this->assertSame(Protocol::MEDIA_TYPE, $transport->recorder->last()['headers']['Accept'] ?? null);
+        $this->assertSame('application/cloudevents-batch+json', Protocol::MEDIA_TYPE);
     }
 
     public function testSendsThePositionAndLimit(): void
@@ -183,7 +184,7 @@ class HttpJournalTest extends TestCase
      */
     public function testAnErrorStatusIsNotMistakenForAnEmptyBatch(): void
     {
-        [$feed] = $this->feed([FakeTransport::json(['total' => 0, 'events' => []], 500)]);
+        [$feed] = $this->feed([FakeTransport::json([], 500)]);
 
         $this->expectException(Transport::class);
 
