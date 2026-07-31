@@ -7,7 +7,7 @@ namespace Utopia\Feed;
 use Utopia\CloudEvents\CloudEvent;
 
 // The contract of "something a feed's events can be read from" — the
-// counterpart of Appendable. Journal implements it on the server; Remote is
+// counterpart of Appendable. Store implements it on the server; Remote is
 // the client's read-only view of another service's feed.
 interface Readable
 {

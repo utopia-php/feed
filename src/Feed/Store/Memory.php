@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Journal;
+namespace Utopia\Feed\Store;
 
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Id;
 use Utopia\Feed\Appendable;
-use Utopia\Feed\Journal;
+use Utopia\Feed\Store;
 
-class Memory extends Journal implements Appendable
+class Memory extends Store implements Appendable
 {
     /** @var list<CloudEvent> */
     private array $events = [];

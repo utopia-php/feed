@@ -4,29 +4,51 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
+use Utopia\Client\Adapter;
+
 // Client class: the pull loop — reads what it has not seen and records how far it got.
 class Consumer
 {
     public const int BATCH = 100;
+
+    protected readonly Readable $feed;
 
     private ?string $position = null;
 
     private bool $restored = false;
 
     /**
-     * @param Readable $feed The feed to pull from — a Remote for another
-     *        service's feed, or a local journal for one this service owns.
+     * @param Adapter|Readable $source The feed to pull from — an HTTP client
+     *        for another service's feed (its endpoint set on the client with
+     *        withBaseUri()), or a local store for a feed this service owns.
+     * @param string $name This consumer's name — what keys its position.
+     * @param string $feed The feed's name. Required when $source is a client,
+     *        where nothing else carries it; a local source already names its
+     *        feed, so leave it out.
+     *
+     * @throws Exception\Invalid When a name is missing, or $feed contradicts the source.
      */
     public function __construct(
-        protected readonly Readable $feed,
-        protected readonly string $name,
+        Adapter|Readable $source,
         protected readonly Cursor $cursor,
+        protected readonly string $name,
+        string $feed = '',
         protected readonly int $batch = self::BATCH,
         protected readonly int $timeout = 0,
         protected readonly Start $start = Start::Oldest,
     ) {
         if ($name === '') {
             throw new Exception\Invalid('Feed consumer requires a name');
+        }
+
+        if ($source instanceof Adapter) {
+            $this->feed = new Remote($source, $feed);
+        } else {
+            if ($feed !== '' && $feed !== $source->getName()) {
+                throw new Exception\Invalid("The source already names its feed {$source->getName()}, which {$feed} contradicts");
+            }
+
+            $this->feed = $source;
         }
     }
 
@@ -77,7 +99,7 @@ class Consumer
 
     /**
      * Where a poll starts when no position is stored: the oldest retained
-     * event, or — for Start::Tip — the tip sentinel, which the journal (or
+     * event, or — for Start::Tip — the tip sentinel, which the store (or
      * the remote producer, inside the same request) resolves to "now". Once
      * events are handled and the cursor saves, the sentinel never appears
      * again; reset() forgets the position, so the next poll anchors anew.

@@ -4,23 +4,23 @@
 [![Discord](https://img.shields.io/discord/564160730845151244)](https://appwrite.io/discord)
 
 Utopia Feed moves events between services with **pull-based HTTP event feeds**
-([http-feeds.org](https://www.http-feeds.org/)). A producer appends events to
+([http-feeds.org](https://www.http-feeds.org/)). A producer writes events to
 an ordered log; each consumer polls *"what happened since the last event I
 saw?"* and keeps its own position, so the producer stores nothing per consumer
 and delivery is **at-least-once**. A consumer that was down catches up on its
 next poll.
 
-The whole library in one sentence: *a `Producer` appends to a `Journal`, a
-`Feed` serves that journal over HTTP; a `Consumer` reads a `Remote` feed and
-keeps its place in a `Cursor`.*
+The whole library in three classes: a `Producer` produces events into a
+`Store`, a `Server` serves that store over HTTP, and a `Consumer` consumes the
+feed through an HTTP client, keeping its place in a `Cursor`.
 
 ## Which classes are mine?
 
 | Server (owns the feed) | Client (consumes it) |
 | --- | --- |
-| `Journal` — where events live | `Remote` — another service's feed, over HTTP |
-| `Producer` — appends events | `Consumer` — the pull loop |
-| `Feed` — serves the journal | `Cursor` — where the position is kept |
+| `Store` — where events live | `Consumer` — the pull loop |
+| `Producer` — writes events | `Cursor` — where the position is kept |
+| `Server` — serves the store | |
 
 ## Install
 
@@ -30,30 +30,30 @@ composer require utopia-php/feed
 
 ## Serve a feed
 
-The server side is three objects over one journal — where the events live,
-here a capped Redis stream:
+The server side is three objects over one store — where the events live, here
+a capped Redis stream:
 
 ```php
-use Utopia\Feed\Feed;
-use Utopia\Feed\Journal;
 use Utopia\Feed\Producer;
+use Utopia\Feed\Server;
+use Utopia\Feed\Store;
 
-$journal = new Journal\Redis($redis, 'edge');
+$store = new Store\Redis($redis, 'edge');
 
 // Wherever things happen:
-$producer = new Producer($journal, source: 'urn:appwrite:cloud:fra');
+$producer = new Producer($store, source: 'urn:appwrite:cloud:fra');
 
-$producer->append(
+$producer->produce(
     type: 'io.appwrite.edge.invalidate-rule',
     data: ['tags' => ['domain' => 'example.com']],
     subject: 'example.com',
 );
 
 // The whole feed route:
-$feed = new Feed($journal);
+$server = new Server($store);
 
 // GET /v1/feeds/:feedId
-$batch = $feed->serve($request->getParams());
+$batch = $server->serve($request->getParams());
 
 $response
     ->addHeader('Content-Type', 'application/cloudevents-batch+json')
@@ -90,20 +90,22 @@ empty array means the consumer is caught up:
 `serve()` reads `lastEventId`, `limit` and `timeout` from the raw query
 parameters, coerces and clamps them (at most 1000 events per batch, long polls
 held at most 30s), and throws `Exception\Invalid` on a malformed `lastEventId`
-— catch it to answer 400. `append()` returns the event's id, which is its
+— catch it to answer 400. `produce()` returns the event's id, which is its
 position in the feed. Subclass `Producer` to give callers a typed vocabulary
 instead of raw type strings.
 
-The `Batch` that `serve()` (and `Feed::read()`/`poll()`) returns counts and
+The `Batch` that `serve()` (and `Server::read()`/`poll()`) returns counts and
 iterates as its events; `cacheControl()` marks a full batch as immutable
 history and everything shorter `no-store`, using the limit the batch was
 actually built with, so the header is always honest.
 
 ## Consume a feed
 
-The client side is a `Consumer` pulling a `Remote` feed, with its position in
-a `Cursor`. With a `timeout`, each poll is one held request that returns the
-moment an event lands (long polling — the producer does the waiting):
+The client side is a `Consumer` pulling over an HTTP client, with its position
+in a `Cursor`. The feed's endpoint is set on the client — `withBaseUri()` —
+and the consumer names the feed it reads. With a `timeout`, each poll is one
+held request that returns the moment an event lands (long polling — the
+producer does the waiting):
 
 ```php
 use Utopia\Client;
@@ -112,15 +114,13 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Exception\Transport;
-use Utopia\Feed\Remote;
 
 $client = (new Client(new Curl()))
+    ->withBaseUri('https://cloud.example.com/v1/feeds')
     ->withHeaders(['x-appwrite-jwt' => $token])
     ->withConnectionReuse();
 
-$remote = new Remote($client, 'https://cloud.example.com/v1/feeds', 'edge');
-
-$consumer = new Consumer($remote, 'cache-invalidator', new Cursor\Cache($cache), timeout: 20_000);
+$consumer = new Consumer($client, new Cursor\Cache($cache), name: 'cache-invalidator', feed: 'edge', timeout: 20_000);
 
 while (true) {
     try {
@@ -141,10 +141,11 @@ Leave the client's `Retry` decorator off: a failed read leaves the position
 where it was.
 
 A consumer inside the producing service reads its own feed the same way —
-`Consumer` accepts anything `Readable`, so hand it the local journal directly:
+`Consumer` also accepts a local store in place of the client, which already
+names its feed:
 
 ```php
-$consumer = new Consumer($journal, 'audit-log', new Cursor\Redis($redis));
+$consumer = new Consumer($store, new Cursor\Redis($redis), name: 'audit-log');
 ```
 
 ### Starting at the tip
@@ -156,7 +157,7 @@ they happen — opts into starting at the tip:
 ```php
 use Utopia\Feed\Start;
 
-$consumer = new Consumer($remote, 'notifier', $cursor, timeout: 20_000, start: Start::Tip);
+$consumer = new Consumer($client, $cursor, name: 'notifier', feed: 'edge', timeout: 20_000, start: Start::Tip);
 ```
 
 A stored position always wins; `Start::Tip` applies only on the first run or
@@ -218,20 +219,20 @@ position, so the feed is split between them rather than delivered to both.
 
 ## Reference
 
-### Journals
+### Stores
 
-Every journal is `Readable` and `Appendable` — it owns its events and assigns
-their ids. (`Remote` is `Readable` only; you cannot produce into someone
-else's feed.) All take `maxSize` (retention, ~100,000 entries by default) and
+Every store is `Readable` and `Appendable` — it owns its events and assigns
+their ids. All take `maxSize` (retention, ~100,000 entries by default) and
 `pollInterval` (how often a held poll re-reads, 500 ms by default — shorter
 lowers long-poll latency, raises backend reads).
 
-| Journal | Use for |
+| Store | Use for |
 | --- | --- |
-| `Journal\Redis` | Producing a feed on a Redis stream |
-| `Journal\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection — borrows per read, so a held poll never ties up a connection |
-| `Journal\Memory` | Tests and single-process development |
-| `Journal\None` | No backend configured — throws on use, so a misconfigured service fails loudly instead of dropping events |
+| `Store\Redis` | Producing a feed on a Redis stream |
+| `Store\Pool` | The same, over a [pooled](https://github.com/utopia-php/pools) connection — borrows per read, so a held poll never ties up a connection |
+| `Store\Cache` | A feed on a [Utopia cache](https://github.com/utopia-php/cache) — for a service that already carries a cache and does not want another backend. One key per feed, rewritten per append (last-writer-wins — run one producing process); expires `ttl` after the last append, 30 days by default |
+| `Store\Memory` | Tests and single-process development |
+| `Store\None` | No backend configured — throws on use, so a misconfigured service fails loudly instead of dropping events |
 
 ### Cursors
 
@@ -271,7 +272,7 @@ All extend `Utopia\Feed\Exception`.
 | --- | --- |
 | `Exception\Invalid` | Input is wrong: a malformed event id or `lastEventId`, an empty feed/consumer name, a payload that cannot be JSON-encoded, a response that is not a feed batch. Answer 400 when it surfaces from `serve()` |
 | `Exception\Transport` | The backend or network failed: Redis errors, HTTP failures (the status code is on the exception), a cursor store that is down |
-| `Exception\Unsupported` | The operation cannot happen here: any use of `Journal\None`, or `tip()` on a `Remote` (the producer resolves the tip) |
+| `Exception\Unsupported` | The operation cannot happen here: any use of `Store\None`, or `tip()` on a remote feed (the producer resolves the tip) |
 
 ## The fine print
 
@@ -292,12 +293,12 @@ try {
 }
 ```
 
-**Retention is bounded.** Journals trim to about `maxSize` entries (Redis
-trims approximately). The oldest retained entry is where a consumer with no
-position starts; a consumer that fell behind the trim horizon gets what is
-left — no error, no detectable gap. Feeds therefore suit events that describe
-a state to converge on (a cache tag to drop, a record to refresh) rather than
-ones whose effect depends on seeing every single one.
+**Retention is bounded.** Stores trim to about `maxSize` entries (Redis trims
+approximately). The oldest retained entry is where a consumer with no position
+starts; a consumer that fell behind the trim horizon gets what is left — no
+error, no detectable gap. Feeds therefore suit events that describe a state to
+converge on (a cache tag to drop, a record to refresh) rather than ones whose
+effect depends on seeing every single one.
 
 **Decoding is strict about `id`, lenient about the rest.** The id is the
 consumer's position, so an entry without one ends the batch there: everything
@@ -307,13 +308,14 @@ producer that adds attributes or moves the spec version forward does not stop
 a consumer that predates it — the spec's optional `method` attribute included.
 
 **Why a poll loop instead of `XREAD BLOCK`?** A blocking read holds the
-connection for the whole wait, which is exactly what `Journal\Pool`'s
+connection for the whole wait, which is exactly what `Store\Pool`'s
 borrow-per-read strategy exists to avoid. Tune the trade-off with
 `pollInterval`.
 
 **For integrators** building a transport of their own: the wire contract —
-query parameters, batch encoding, caching rule — lives in `Utopia\Feed\Protocol`.
-Services never need it.
+query parameters, batch encoding, caching rule — lives in `Utopia\Feed\Protocol`,
+and `Utopia\Feed\Remote` is the client-side `Readable` the consumer builds
+over its client. Services never need either.
 
 ## Tests
 

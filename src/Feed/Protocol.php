@@ -8,8 +8,8 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 
 // HTTP shape of a feed, as defined by https://www.http-feeds.org/.
-// Internal plumbing: used by Feed and the HTTP journal, so a service serving
-// or reading a feed never needs to name it — Feed::serve() and Batch cover
+// Internal plumbing: used by Server and Remote, so a service serving or
+// reading a feed never needs to name it — Server::serve() and Batch cover
 // both ends. It stays public for integrators building their own transports.
 final class Protocol
 {

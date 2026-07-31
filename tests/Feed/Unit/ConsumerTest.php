@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Utopia\Feed\Journal\Memory as MemoryJournal;
+use Utopia\Feed\Store\Memory as MemoryStore;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor\Memory as MemoryCursor;
@@ -16,11 +16,12 @@ use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
 use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FailingCursor;
-use Utopia\Tests\Unit\Support\MidPollJournal;
+use Utopia\Tests\Unit\Support\FakeTransport;
+use Utopia\Tests\Unit\Support\MidPollStore;
 
 class ConsumerTest extends TestCase
 {
-    private MemoryJournal $journal;
+    private MemoryStore $store;
 
     private Producer $producer;
 
@@ -28,14 +29,14 @@ class ConsumerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->journal = new MemoryJournal('edge');
-        $this->producer = new Producer($this->journal, 'urn:test');
+        $this->store = new MemoryStore('edge');
+        $this->producer = new Producer($this->store, 'urn:test');
         $this->cursor = new MemoryCursor();
     }
 
     private function consumer(?Cursor $cursor = null, int $batch = Consumer::BATCH): Consumer
     {
-        return new Consumer($this->journal, 'invalidator', $cursor ?? $this->cursor, $batch);
+        return new Consumer($this->store, $cursor ?? $this->cursor, 'invalidator', batch: $batch);
     }
 
     /**
@@ -54,8 +55,8 @@ class ConsumerTest extends TestCase
 
     public function testHandlesEachEventAndAdvancesPastTheLastOne(): void
     {
-        $this->producer->append('a');
-        $last = $this->producer->append('b');
+        $this->producer->produce('a');
+        $last = $this->producer->produce('b');
 
         $consumer = $this->consumer();
 
@@ -67,7 +68,7 @@ class ConsumerTest extends TestCase
 
     public function testCaughtUpConsumerDoesNothing(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
         $consumer = $this->consumer();
         $consumer->consume(fn (CloudEvent $event) => null);
@@ -77,8 +78,8 @@ class ConsumerTest extends TestCase
 
     public function testResumesFromTheStoredPosition(): void
     {
-        $first = $this->producer->append('a');
-        $this->producer->append('b');
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
 
         $this->cursor->save('edge', 'invalidator', $first);
 
@@ -92,15 +93,15 @@ class ConsumerTest extends TestCase
      */
     public function testAConsumerWithNoPositionStartsAtTheOldestEventNotTheTip(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
         $this->assertSame(['a', 'b'], $this->drain($this->consumer()));
     }
 
     public function testReadsTheStoreOnceAndThenTracksThePositionInMemory(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
         $cursor = new class () extends MemoryCursor {
             public int $loads = 0;
@@ -127,9 +128,9 @@ class ConsumerTest extends TestCase
 
     public function testStopsAtTheFirstFailureAndLeavesThePositionBeforeIt(): void
     {
-        $first = $this->producer->append('a');
-        $this->producer->append('b');
-        $this->producer->append('c');
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
+        $this->producer->produce('c');
 
         $consumer = $this->consumer();
         $seen = [];
@@ -153,8 +154,8 @@ class ConsumerTest extends TestCase
 
     public function testRetriesTheFailedEventOnTheNextRun(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
         $consumer = $this->consumer();
         $attempts = 0;
@@ -181,7 +182,7 @@ class ConsumerTest extends TestCase
      */
     public function testAFailureOnTheFirstEventCommitsNothing(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
         try {
             $this->consumer()->consume(fn (CloudEvent $event) => throw new \RuntimeException('nope'));
@@ -194,21 +195,20 @@ class ConsumerTest extends TestCase
 
     public function testAHandlerThatAcceptsEverythingCountsEveryEvent(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
-        $this->producer->append('c');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+        $this->producer->produce('c');
 
         $this->assertSame(3, $this->consumer()->consume(fn (CloudEvent $event) => null));
     }
 
     /**
-     * The clamping the client-side Feed wrapper used to provide lives in the
-     * consumer now: whatever the constructor was given, a journal is never
-     * asked for more than the protocol allows.
+     * The consumer clamps its own inputs: whatever the constructor was given,
+     * a store is never asked for more than the protocol allows.
      */
     public function testClampsBatchAndTimeoutToTheProtocolLimits(): void
     {
-        $journal = new class ('edge') extends MemoryJournal {
+        $store = new class ('edge') extends MemoryStore {
             public ?int $limit = null;
 
             public ?int $timeout = null;
@@ -222,17 +222,17 @@ class ConsumerTest extends TestCase
             }
         };
 
-        $consumer = new Consumer($journal, 'invalidator', $this->cursor, batch: 5_000, timeout: 120_000);
+        $consumer = new Consumer($store, $this->cursor, 'invalidator', batch: 5_000, timeout: 120_000);
         $consumer->consume(fn (CloudEvent $event) => null);
 
-        $this->assertSame(Protocol::MAX_BATCH, $journal->limit);
-        $this->assertSame(Protocol::MAX_TIMEOUT, $journal->timeout);
+        $this->assertSame(Protocol::MAX_BATCH, $store->limit);
+        $this->assertSame(Protocol::MAX_TIMEOUT, $store->timeout);
     }
 
     public function testDrainsABacklogInBatches(): void
     {
         foreach (\range(1, 10) as $i) {
-            $this->producer->append('event-' . $i);
+            $this->producer->produce('event-' . $i);
         }
 
         $consumer = $this->consumer(batch: 4);
@@ -250,7 +250,7 @@ class ConsumerTest extends TestCase
      */
     public function testAPositionThatCannotBeLoadedStopsTheRun(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
         $consumer = $this->consumer(new FailingCursor(onLoad: true));
         $seen = [];
@@ -273,7 +273,7 @@ class ConsumerTest extends TestCase
      */
     public function testAFailedLoadIsRetriedOnTheNextRun(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
         $cursor = new class () extends MemoryCursor {
             public bool $fail = true;
@@ -307,8 +307,8 @@ class ConsumerTest extends TestCase
      */
     public function testAPositionThatCannotBeSavedIsRaisedAfterTheEventsAreHandled(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
         $consumer = $this->consumer(new FailingCursor(onSave: true));
         $seen = [];
@@ -328,10 +328,10 @@ class ConsumerTest extends TestCase
 
     public function testTipStartDoesNotAnnounceTheBacklog(): void
     {
-        $this->producer->append('old-1');
-        $this->producer->append('old-2');
+        $this->producer->produce('old-1');
+        $this->producer->produce('old-2');
 
-        $consumer = new Consumer($this->journal, 'notifier', $this->cursor, start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'notifier', start: Start::Tip);
 
         $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
         $this->assertNull($this->cursor->load('edge', 'notifier'), 'Skipping the backlog is not progress to commit');
@@ -343,11 +343,11 @@ class ConsumerTest extends TestCase
      */
     public function testTipStartDeliversWhatLandsMidPoll(): void
     {
-        $journal = new MidPollJournal('edge');
-        (new Producer($journal, 'urn:test'))->append('old');
+        $store = new MidPollStore('edge');
+        (new Producer($store, 'urn:test'))->produce('old');
 
         $cursor = new MemoryCursor();
-        $consumer = new Consumer($journal, 'notifier', $cursor, timeout: 5_000, start: Start::Tip);
+        $consumer = new Consumer($store, $cursor, 'notifier', timeout: 5_000, start: Start::Tip);
 
         $seen = [];
         $count = $consumer->consume(function (CloudEvent $event) use (&$seen): void {
@@ -361,23 +361,23 @@ class ConsumerTest extends TestCase
 
     public function testAStoredCursorBeatsTipStart(): void
     {
-        $first = $this->producer->append('a');
-        $this->producer->append('b');
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
 
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer($this->journal, 'invalidator', $this->cursor, start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'invalidator', start: Start::Tip);
 
         $this->assertSame(['b'], $this->drain($consumer), 'A restart must not skip the gap');
     }
 
     public function testResetWithTipStartResumesFromNow(): void
     {
-        $first = $this->producer->append('a');
-        $this->producer->append('b');
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer($this->journal, 'invalidator', $this->cursor, start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'invalidator', start: Start::Tip);
 
         $this->assertSame(['b'], $this->drain($consumer), 'The stored position still wins before the reset');
 
@@ -388,7 +388,7 @@ class ConsumerTest extends TestCase
 
     public function testTipStartOnAnEmptyFeedWaitsOutTheTimeoutEmpty(): void
     {
-        $consumer = new Consumer($this->journal, 'notifier', $this->cursor, timeout: 600, start: Start::Tip);
+        $consumer = new Consumer($this->store, $this->cursor, 'notifier', timeout: 600, start: Start::Tip);
 
         $started = \microtime(true);
 
@@ -398,7 +398,7 @@ class ConsumerTest extends TestCase
 
     public function testTipStartOnAnEmptyFeedDeliversWhatLandsMidWait(): void
     {
-        $consumer = new Consumer(new MidPollJournal('edge'), 'notifier', $this->cursor, timeout: 5_000, start: Start::Tip);
+        $consumer = new Consumer(new MidPollStore('edge'), $this->cursor, 'notifier', timeout: 5_000, start: Start::Tip);
 
         $seen = [];
         $consumer->consume(function (CloudEvent $event) use (&$seen): void {
@@ -410,8 +410,8 @@ class ConsumerTest extends TestCase
 
     public function testResetReplaysEverythingStillRetained(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
         $consumer = $this->consumer();
         $consumer->consume(fn (CloudEvent $event) => null);
@@ -425,9 +425,9 @@ class ConsumerTest extends TestCase
 
     public function testSeekPositionsTheNextRunStrictlyAfterTheGivenId(): void
     {
-        $this->producer->append('a');
-        $second = $this->producer->append('b');
-        $this->producer->append('c');
+        $this->producer->produce('a');
+        $second = $this->producer->produce('b');
+        $this->producer->produce('c');
 
         $consumer = $this->consumer();
         $consumer->seek($second);
@@ -442,9 +442,9 @@ class ConsumerTest extends TestCase
      */
     public function testASeekSurvivesARestart(): void
     {
-        $this->producer->append('a');
-        $second = $this->producer->append('b');
-        $this->producer->append('c');
+        $this->producer->produce('a');
+        $second = $this->producer->produce('b');
+        $this->producer->produce('c');
 
         $this->consumer()->seek($second);
 
@@ -458,8 +458,8 @@ class ConsumerTest extends TestCase
      */
     public function testSeekingToAPoisonEventsIdUnblocksTheConsumer(): void
     {
-        $this->producer->append('poison');
-        $this->producer->append('after');
+        $this->producer->produce('poison');
+        $this->producer->produce('after');
 
         $consumer = $this->consumer();
         $poison = null;
@@ -490,7 +490,7 @@ class ConsumerTest extends TestCase
      */
     public function testSeekRejectsAnIdThatIsNotAPosition(string $id): void
     {
-        $first = $this->producer->append('a');
+        $first = $this->producer->produce('a');
         $this->cursor->save('edge', 'invalidator', $first);
 
         $consumer = $this->consumer();
@@ -525,7 +525,7 @@ class ConsumerTest extends TestCase
      */
     public function testASeekThatCannotPersistFailsLoudlyAndMovesNothing(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
         $consumer = $this->consumer(new FailingCursor(onSave: true));
 
@@ -543,10 +543,10 @@ class ConsumerTest extends TestCase
 
     public function testConsumersOfTheSameFeedTrackSeparatePositions(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
-        $one = new Consumer($this->journal, 'one', $this->cursor);
-        $two = new Consumer($this->journal, 'two', $this->cursor);
+        $one = new Consumer($this->store, $this->cursor, 'one');
+        $two = new Consumer($this->store, $this->cursor, 'two');
 
         $this->assertSame(1, $one->consume(fn (CloudEvent $event) => null));
         $this->assertSame(1, $two->consume(fn (CloudEvent $event) => null), 'The second consumer has its own position');
@@ -562,7 +562,7 @@ class ConsumerTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        new Consumer($this->journal, '', $this->cursor);
+        new Consumer($this->store, $this->cursor, '');
     }
 
     public function testExposesItsName(): void
@@ -571,16 +571,48 @@ class ConsumerTest extends TestCase
     }
 
     /**
+     * A client carries the endpoint but not the feed's name, so a consumer
+     * built over one has to be told which feed it is reading.
+     */
+    public function testConsumingThroughAClientRequiresAFeedName(): void
+    {
+        $this->expectException(Invalid::class);
+
+        new Consumer(FakeTransport::of([]), $this->cursor, 'invalidator');
+    }
+
+    /**
+     * A local store already names its feed. Repeating the name is harmless;
+     * contradicting it means the caller is confused about what they are
+     * reading, which must not resolve silently in either direction.
+     */
+    public function testAFeedNameThatContradictsTheStoreIsRejected(): void
+    {
+        $this->expectException(Invalid::class);
+
+        new Consumer($this->store, $this->cursor, 'invalidator', feed: 'other');
+    }
+
+    public function testAFeedNameThatMatchesTheStoreIsAccepted(): void
+    {
+        $this->producer->produce('a');
+
+        $consumer = new Consumer($this->store, $this->cursor, 'invalidator', feed: 'edge');
+
+        $this->assertSame(1, $consumer->consume(fn (CloudEvent $event) => null));
+    }
+
+    /**
      * The failure a consumer must not turn into a gap: if the read itself
      * fails, nothing is handled and nothing is committed.
      */
     public function testAFailedReadLeavesThePositionAlone(): void
     {
-        $first = $this->producer->append('a');
-        $this->producer->append('b');
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
         $this->cursor->save('edge', 'invalidator', $first);
 
-        $consumer = new Consumer(new \Utopia\Feed\Journal\None('edge'), 'invalidator', $this->cursor);
+        $consumer = new Consumer(new \Utopia\Feed\Store\None('edge'), $this->cursor, 'invalidator');
 
         $this->expectException(\Utopia\Feed\Exception\Unsupported::class);
 

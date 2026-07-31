@@ -15,6 +15,8 @@ use Utopia\Psr7\Method;
 use Utopia\Psr7\Request\Factory as RequestFactory;
 
 // Client class: another service's feed, read over the wire.
+// The endpoint lives on the client — set it with withBaseUri() — and the feed
+// name becomes the request path, resolved against it.
 // Deliberately Readable and not Appendable — events are appended by whoever
 // owns the feed, so producing into a remote one is a type error, not a request.
 class Remote implements Readable
@@ -23,7 +25,6 @@ class Remote implements Readable
 
     public function __construct(
         protected readonly Adapter $client,
-        protected readonly string $endpoint,
         protected readonly string $name,
     ) {
         if ($name === '') {
@@ -63,13 +64,13 @@ class Remote implements Readable
      */
     private function fetch(?string $lastEventId, int $limit, int $timeout): array
     {
-        $url = $this->url();
-
+        // The path is relative — the feed's name — and the client resolves it
+        // against its base URI, which is where the endpoint is configured.
         // The Content-Type of the response is deliberately not checked: many
         // servers answer application/json, and the body shape is what matters.
         $request = $this->requests->query(
             Method::GET,
-            $url,
+            \rawurlencode($this->name),
             Protocol::query($lastEventId, $limit, $timeout),
             [Header::ACCEPT => Protocol::MEDIA_TYPE],
         );
@@ -84,14 +85,14 @@ class Remote implements Readable
         try {
             $response = $client->sendRequest($request);
         } catch (ClientExceptionInterface $error) {
-            throw new Transport("Failed to read the {$this->name} feed at {$url}: {$error->getMessage()}", previous: $error);
+            throw new Transport("Failed to read the {$this->name} feed: {$error->getMessage()}", previous: $error);
         }
 
         $status = $response->getStatusCode();
 
         if ($status >= 400) {
             throw new Transport(
-                "Reading the {$this->name} feed at {$url} failed with status {$status}",
+                "Reading the {$this->name} feed failed with status {$status}",
                 $status,
             );
         }
@@ -99,14 +100,9 @@ class Remote implements Readable
         try {
             $body = \json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
         } catch (\JsonException $error) {
-            throw new Transport("The {$this->name} feed at {$url} returned a body that is not JSON: {$error->getMessage()}", previous: $error);
+            throw new Transport("The {$this->name} feed returned a body that is not JSON: {$error->getMessage()}", previous: $error);
         }
 
         return Protocol::decode($body);
-    }
-
-    private function url(): string
-    {
-        return \rtrim($this->endpoint, '/') . '/' . \rawurlencode($this->name);
     }
 }

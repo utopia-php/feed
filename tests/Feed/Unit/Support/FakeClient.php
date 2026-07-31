@@ -16,7 +16,7 @@ use Utopia\Psr7\Header;
  *
  * The `with*()` methods clone the way the real client does, rather than
  * mutating and returning `$this`. That matters: a test asserting that a long
- * poll was given a longer deadline has to be able to fail if the journal
+ * poll was given a longer deadline has to be able to fail if the remote feed
  * configured a clone and then sent through the original.
  */
 abstract class FakeClient implements ClientAdapter

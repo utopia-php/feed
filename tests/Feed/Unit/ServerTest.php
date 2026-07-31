@@ -5,31 +5,31 @@ declare(strict_types=1);
 namespace Utopia\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Utopia\Feed\Journal\Memory;
-use Utopia\Feed\Journal\None;
+use Utopia\Feed\Store\Memory;
+use Utopia\Feed\Store\None;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Batch;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
-use Utopia\Feed\Feed;
+use Utopia\Feed\Server;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
 use Utopia\Feed\Id;
-use Utopia\Tests\Unit\Support\MidPollJournal;
+use Utopia\Tests\Unit\Support\MidPollStore;
 
-class FeedTest extends TestCase
+class ServerTest extends TestCase
 {
-    private Memory $journal;
+    private Memory $store;
 
-    private Feed $feed;
+    private Server $server;
 
     private Producer $producer;
 
     protected function setUp(): void
     {
-        $this->journal = new Memory('edge');
-        $this->producer = new Producer($this->journal, 'urn:appwrite:cloud:fra');
-        $this->feed = new Feed($this->journal);
+        $this->store = new Memory('edge');
+        $this->producer = new Producer($this->store, 'urn:appwrite:cloud:fra');
+        $this->server = new Server($this->store);
     }
 
     /** @return list<CloudEvent> */
@@ -40,9 +40,9 @@ class FeedTest extends TestCase
 
     public function testReadsBackWhatWasAppended(): void
     {
-        $this->producer->append('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
+        $this->producer->produce('io.appwrite.edge.invalidate-rule', ['tags' => ['domain' => 'example.com']], 'example.com');
 
-        $events = self::events($this->feed->read());
+        $events = self::events($this->server->read());
 
         $this->assertCount(1, $events);
         $this->assertSame('io.appwrite.edge.invalidate-rule', $events[0]->type);
@@ -53,17 +53,17 @@ class FeedTest extends TestCase
     public function testEventsComeBackOldestFirst(): void
     {
         foreach (['a', 'b', 'c'] as $type) {
-            $this->producer->append($type);
+            $this->producer->produce($type);
         }
 
-        $this->assertSame(['a', 'b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($this->feed->read())));
+        $this->assertSame(['a', 'b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($this->server->read())));
     }
 
     public function testIdsAreStrictlyIncreasingEvenWithinAMillisecond(): void
     {
         $ids = [];
         for ($i = 0; $i < 50; $i++) {
-            $ids[] = $this->producer->append('test');
+            $ids[] = $this->producer->produce('test');
         }
 
         $this->assertSame($ids, \array_unique($ids), 'Positions must be unique');
@@ -75,10 +75,10 @@ class FeedTest extends TestCase
 
     public function testReadsStrictlyAfterTheGivenPosition(): void
     {
-        $first = $this->producer->append('a');
-        $this->producer->append('b');
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
 
-        $events = self::events($this->feed->read($first));
+        $events = self::events($this->server->read($first));
 
         $this->assertCount(1, $events);
         $this->assertSame('b', $events[0]->type);
@@ -86,27 +86,27 @@ class FeedTest extends TestCase
 
     public function testReadFromTheLastEventIsEmpty(): void
     {
-        $this->producer->append('a');
-        $last = $this->producer->append('b');
+        $this->producer->produce('a');
+        $last = $this->producer->produce('b');
 
-        $this->assertCount(0, $this->feed->read($last));
+        $this->assertCount(0, $this->server->read($last));
     }
 
     public function testNullPositionReadsFromTheOldestRetainedEvent(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
-        $this->assertCount(2, $this->feed->read(null));
+        $this->assertCount(2, $this->server->read(null));
     }
 
     public function testHonoursTheLimit(): void
     {
         foreach (\range(1, 10) as $i) {
-            $this->producer->append('test');
+            $this->producer->produce('test');
         }
 
-        $this->assertCount(3, $this->feed->read(null, 3));
+        $this->assertCount(3, $this->server->read(null, 3));
     }
 
     /**
@@ -116,18 +116,18 @@ class FeedTest extends TestCase
      */
     public function testClampsTheLimitToTheMaximum(): void
     {
-        $this->producer->append('test');
+        $this->producer->produce('test');
 
-        $this->assertCount(1, $this->feed->read(null, Protocol::MAX_BATCH * 10));
-        $this->assertCount(1, $this->feed->read(null, 0));
-        $this->assertCount(1, $this->feed->read(null, -5));
+        $this->assertCount(1, $this->server->read(null, Protocol::MAX_BATCH * 10));
+        $this->assertCount(1, $this->server->read(null, 0));
+        $this->assertCount(1, $this->server->read(null, -5));
     }
 
     public function testRejectsAPositionThatIsNotAFeedId(): void
     {
         $this->expectException(Invalid::class);
 
-        $this->feed->read('not-a-position');
+        $this->server->read('not-a-position');
     }
 
     /**
@@ -144,7 +144,7 @@ class FeedTest extends TestCase
             extensions: ['traceparent' => '00-abc-def-01', 'retrycount' => 2],
         ));
 
-        $event = self::events($this->feed->read())[0];
+        $event = self::events($this->server->read())[0];
 
         $this->assertSame('00-abc-def-01', $event->extensions['traceparent']);
         $this->assertSame(2, $event->extensions['retrycount']);
@@ -166,7 +166,7 @@ class FeedTest extends TestCase
             extensions: ['123' => 'digits', 'trace' => 'ok'],
         ));
 
-        $event = self::events($this->feed->read())[0];
+        $event = self::events($this->server->read())[0];
 
         // @phpstan-ignore offsetAccess.notFound
         $this->assertSame('digits', $event->extensions['123']);
@@ -182,7 +182,7 @@ class FeedTest extends TestCase
             dataschema: 'https://example.com/schema.json',
         ));
 
-        $this->assertSame('https://example.com/schema.json', self::events($this->feed->read())[0]->dataschema);
+        $this->assertSame('https://example.com/schema.json', self::events($this->server->read())[0]->dataschema);
     }
 
     /**
@@ -211,9 +211,9 @@ class FeedTest extends TestCase
      */
     public function testAnyJsonPayloadSurvivesTheRoundTrip(mixed $data): void
     {
-        $this->producer->append('test', $data);
+        $this->producer->produce('test', $data);
 
-        $this->assertSame($data, self::events($this->feed->read())[0]->data);
+        $this->assertSame($data, self::events($this->server->read())[0]->data);
     }
 
     /**
@@ -222,24 +222,24 @@ class FeedTest extends TestCase
      */
     public function testAnEventWithNoSubjectHasANullSubject(): void
     {
-        $this->producer->append('test');
+        $this->producer->produce('test');
 
-        $this->assertNull(self::events($this->feed->read())[0]->subject);
+        $this->assertNull(self::events($this->server->read())[0]->subject);
     }
 
     public function testASubjectSurvivesAppendAndRead(): void
     {
-        $this->producer->append('test', [], 'example.com');
+        $this->producer->produce('test', [], 'example.com');
 
-        $this->assertSame('example.com', self::events($this->feed->read())[0]->subject);
+        $this->assertSame('example.com', self::events($this->server->read())[0]->subject);
     }
 
     public function testPollReturnsImmediatelyWhenEventsAreWaiting(): void
     {
-        $this->producer->append('test');
+        $this->producer->produce('test');
 
         $started = \microtime(true);
-        $events = $this->feed->poll(null, 10, 2000);
+        $events = $this->server->poll(null, 10, 2000);
 
         $this->assertCount(1, $events);
         $this->assertLessThan(1, \microtime(true) - $started);
@@ -248,7 +248,7 @@ class FeedTest extends TestCase
     public function testPollGivesUpAtTheTimeoutWithAnEmptyBatch(): void
     {
         $started = \microtime(true);
-        $events = $this->feed->poll(null, 10, 600);
+        $events = $this->server->poll(null, 10, 600);
         $elapsed = \microtime(true) - $started;
 
         $this->assertCount(0, $events);
@@ -260,16 +260,16 @@ class FeedTest extends TestCase
     {
         $started = \microtime(true);
 
-        $this->assertCount(0, $this->feed->poll());
+        $this->assertCount(0, $this->server->poll());
         $this->assertLessThan(0.4, \microtime(true) - $started);
     }
 
     public function testAShorterPollIntervalDeliversAMidPollEventSooner(): void
     {
-        $journal = new MidPollJournal('edge', pollInterval: 20);
+        $store = new MidPollStore('edge', pollInterval: 20);
 
         $started = \microtime(true);
-        $events = $journal->poll(null, 10, 5_000);
+        $events = $store->poll(null, 10, 5_000);
         $elapsed = \microtime(true) - $started;
 
         $this->assertCount(1, $events);
@@ -282,10 +282,10 @@ class FeedTest extends TestCase
      */
     public function testPollHonoursATimeoutShorterThanTheInterval(): void
     {
-        $journal = new Memory('edge', pollInterval: 500);
+        $store = new Memory('edge', pollInterval: 500);
 
         $started = \microtime(true);
-        $events = $journal->poll(null, 10, 100);
+        $events = $store->poll(null, 10, 100);
         $elapsed = \microtime(true) - $started;
 
         $this->assertSame([], $events);
@@ -309,15 +309,15 @@ class FeedTest extends TestCase
 
     public function testRetentionIsBoundedAndTrimsTheOldest(): void
     {
-        $journal = new Memory('small', maxSize: 3);
-        $producer = new Producer($journal, 'urn:appwrite:cloud:fra');
-        $feed = new Feed($journal);
+        $store = new Memory('small', maxSize: 3);
+        $producer = new Producer($store, 'urn:appwrite:cloud:fra');
+        $server = new Server($store);
 
         foreach (['a', 'b', 'c', 'd', 'e'] as $type) {
-            $producer->append($type);
+            $producer->produce($type);
         }
 
-        $this->assertSame(['c', 'd', 'e'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($feed->read())));
+        $this->assertSame(['c', 'd', 'e'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($server->read())));
     }
 
     /**
@@ -326,64 +326,64 @@ class FeedTest extends TestCase
      */
     public function testAPositionBelowTheTrimHorizonReadsWhatIsLeft(): void
     {
-        $journal = new Memory('small', maxSize: 2);
-        $producer = new Producer($journal, 'urn:appwrite:cloud:fra');
-        $feed = new Feed($journal);
+        $store = new Memory('small', maxSize: 2);
+        $producer = new Producer($store, 'urn:appwrite:cloud:fra');
+        $server = new Server($store);
 
-        $first = $producer->append('a');
-        $producer->append('b');
-        $producer->append('c');
+        $first = $producer->produce('a');
+        $producer->produce('b');
+        $producer->produce('c');
 
-        $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($feed->read($first))));
+        $this->assertSame(['b', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, self::events($server->read($first))));
     }
 
     public function testExposesTheFeedItReads(): void
     {
-        $this->assertSame('edge', $this->feed->getName());
+        $this->assertSame('edge', $this->server->getName());
     }
 
     public function testAFeedWithNoBackendCannotBeRead(): void
     {
-        $feed = new Feed(new None('edge'));
+        $server = new Server(new None('edge'));
 
         $this->expectException(Unsupported::class);
 
-        $feed->read();
+        $server->read();
     }
 
     public function testTipIsTheNewestEventsId(): void
     {
-        $this->assertNull($this->feed->tip());
+        $this->assertNull($this->server->tip());
 
-        $this->producer->append('a');
-        $last = $this->producer->append('b');
+        $this->producer->produce('a');
+        $last = $this->producer->produce('b');
 
-        $this->assertSame($last, $this->feed->tip());
+        $this->assertSame($last, $this->server->tip());
     }
 
     public function testReadingFromTheTipSentinelSkipsTheBacklog(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
-        $this->assertCount(0, $this->feed->read(Protocol::TIP));
+        $this->assertCount(0, $this->server->read(Protocol::TIP));
     }
 
     public function testServeAppliesTheDefaultsWhenNoParametersArrive(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
-        $this->assertCount(2, $this->feed->serve([]));
+        $this->assertCount(2, $this->server->serve([]));
     }
 
     public function testServeCoercesTheStringValuesARouteHands(): void
     {
-        $first = $this->producer->append('a');
-        $this->producer->append('b');
-        $this->producer->append('c');
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
+        $this->producer->produce('c');
 
-        $batch = $this->feed->serve([
+        $batch = $this->server->serve([
             'lastEventId' => $first,
             'limit' => '1',
             'timeout' => '0',
@@ -394,31 +394,31 @@ class FeedTest extends TestCase
 
     public function testServeTreatsAnEmptyLastEventIdAsAbsent(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
-        $this->assertCount(1, $this->feed->serve(['lastEventId' => '']));
+        $this->assertCount(1, $this->server->serve(['lastEventId' => '']));
     }
 
     public function testServeRejectsALastEventIdThatIsNotAPosition(): void
     {
         $this->expectException(Invalid::class);
 
-        $this->feed->serve(['lastEventId' => 'not-a-position']);
+        $this->server->serve(['lastEventId' => 'not-a-position']);
     }
 
     public function testServeLetsTheTipSentinelThrough(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
-        $this->assertCount(0, $this->feed->serve(['lastEventId' => Protocol::TIP]));
+        $this->assertCount(0, $this->server->serve(['lastEventId' => Protocol::TIP]));
     }
 
     public function testServeFallsBackToTheDefaultOnAGarbageLimit(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
-        $this->assertCount(2, $this->feed->serve(['limit' => 'lots', 'timeout' => 'soon']));
+        $this->assertCount(2, $this->server->serve(['limit' => 'lots', 'timeout' => 'soon']));
     }
 
     /**
@@ -431,10 +431,10 @@ class FeedTest extends TestCase
     public function testAnOversizedLimitStillYieldsAnHonestCacheControl(): void
     {
         foreach (\range(1, Protocol::MAX_BATCH) as $i) {
-            $this->producer->append('event-' . $i);
+            $this->producer->produce('event-' . $i);
         }
 
-        $batch = $this->feed->serve(['limit' => '5000']);
+        $batch = $this->server->serve(['limit' => '5000']);
 
         $this->assertCount(Protocol::MAX_BATCH, $batch);
         $this->assertSame('public, max-age=31536000', $batch->cacheControl(public: true));
@@ -442,14 +442,14 @@ class FeedTest extends TestCase
 
     public function testAShortBatchIsNotCacheable(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
-        $this->assertSame('no-store', $this->feed->serve([])->cacheControl());
+        $this->assertSame('no-store', $this->server->serve([])->cacheControl());
     }
 
     public function testAnEmptyBatchIsNotCacheable(): void
     {
-        $this->assertSame('no-store', $this->feed->serve([])->cacheControl());
+        $this->assertSame('no-store', $this->server->serve([])->cacheControl());
     }
 
     public function testRejectsAnEmptyFeedName(): void
@@ -461,14 +461,14 @@ class FeedTest extends TestCase
 
     public function testAcceptsTheSmallestUsefulRetentionCap(): void
     {
-        $journal = new Memory('edge', maxSize: 1);
-        $producer = new Producer($journal, 'urn:appwrite:cloud:fra');
-        $feed = new Feed($journal);
+        $store = new Memory('edge', maxSize: 1);
+        $producer = new Producer($store, 'urn:appwrite:cloud:fra');
+        $server = new Server($store);
 
-        $producer->append('a');
-        $producer->append('b');
+        $producer->produce('a');
+        $producer->produce('b');
 
-        $events = self::events($feed->read());
+        $events = self::events($server->read());
 
         $this->assertCount(1, $events);
         $this->assertSame('b', $events[0]->type);

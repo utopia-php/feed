@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Journal;
+namespace Utopia\Feed\Store;
 
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Appendable;
-use Utopia\Feed\Journal;
+use Utopia\Feed\Store;
 use Utopia\Pools\Pool as UtopiaPool;
 
-class Pool extends Journal implements Appendable
+class Pool extends Store implements Appendable
 {
     /**
      * @param UtopiaPool<\Redis|\RedisCluster> $pool
@@ -24,8 +24,8 @@ class Pool extends Journal implements Appendable
     }
 
     // The interval only matters in this class's own inherited poll() loop —
-    // the inner journal lives for a single read — but it is passed through so
-    // a future change to the inner journal cannot silently drop it.
+    // the inner store lives for a single read — but it is passed through so
+    // a future change to the inner store cannot silently drop it.
     private function inner(\Redis|\RedisCluster $redis): Redis
     {
         return new Redis($redis, $this->name, $this->maxSize, $this->pollInterval);

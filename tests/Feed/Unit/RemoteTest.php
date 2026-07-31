@@ -13,14 +13,14 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Exception\Unsupported;
-use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
 use Utopia\Feed\Remote;
+use Utopia\Feed\Server;
 use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FakeTransport;
 use Utopia\Tests\Unit\Support\FeedServer;
-use Utopia\Tests\Unit\Support\MidPollJournal;
+use Utopia\Tests\Unit\Support\MidPollStore;
 
 class RemoteTest extends TestCase
 {
@@ -32,7 +32,7 @@ class RemoteTest extends TestCase
     {
         $transport = FakeTransport::of($responses);
 
-        return [new Remote($transport, 'https://cloud.example.com/v1/feeds', 'edge'), $transport];
+        return [new Remote($transport, 'edge'), $transport];
     }
 
     public function testReadsAFeedOverHttp(): void
@@ -49,11 +49,16 @@ class RemoteTest extends TestCase
         $this->assertSame(['tags' => ['domain' => 'example.com']], $events[0]->data);
     }
 
-    public function testAppendsTheFeedNameToTheEndpoint(): void
+    /**
+     * The endpoint lives on the client — the feed asks for its name as a
+     * relative path and the client resolves it against its base URI.
+     */
+    public function testResolvesTheFeedNameAgainstTheClientsBaseUri(): void
     {
-        [$remote, $transport] = $this->remote();
+        $transport = FakeTransport::of([]);
+        $client = (new Client($transport))->withBaseUri('https://cloud.example.com/v1/feeds');
 
-        $remote->read();
+        (new Remote($client, 'edge'))->read();
 
         $this->assertStringStartsWith('https://cloud.example.com/v1/feeds/edge', $transport->recorder->last()['uri']);
     }
@@ -61,8 +66,9 @@ class RemoteTest extends TestCase
     public function testEncodesAFeedNameThatNeedsIt(): void
     {
         $transport = FakeTransport::of([]);
+        $client = (new Client($transport))->withBaseUri('https://cloud.example.com/v1/feeds/');
 
-        (new Remote($transport, 'https://cloud.example.com/v1/feeds/', 'a b/c'))->read();
+        (new Remote($client, 'a b/c'))->read();
 
         $this->assertStringStartsWith(
             'https://cloud.example.com/v1/feeds/a%20b%2Fc',
@@ -74,7 +80,7 @@ class RemoteTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        new Remote(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds', '');
+        new Remote(FakeTransport::of([]), '');
     }
 
     public function testExposesTheFeedItReads(): void
@@ -259,8 +265,10 @@ class RemoteTest extends TestCase
     {
         $transport = FakeTransport::of([FakeTransport::json(Protocol::encode([new CloudEvent(id: '1-0', type: 'a', source: 'urn:test')]))]);
 
-        $client = (new Client($transport))->withHeaders(['x-appwrite-jwt' => 'token']);
-        $remote = new Remote($client, 'https://cloud.example.com/v1/feeds', 'edge');
+        $client = (new Client($transport))
+            ->withBaseUri('https://cloud.example.com/v1/feeds')
+            ->withHeaders(['x-appwrite-jwt' => 'token']);
+        $remote = new Remote($client, 'edge');
 
         $events = $remote->read();
 
@@ -270,11 +278,12 @@ class RemoteTest extends TestCase
 
     /**
      * The point of this class: a remote feed is consumed with exactly the
-     * code a local one is.
+     * code a local one is. The consumer is built straight over the client —
+     * it wraps the feed name and the client into a Remote itself.
      */
     public function testConsumesARemoteFeedThroughTheSameConsumer(): void
     {
-        [$remote, $transport] = $this->remote([
+        $transport = FakeTransport::of([
             FakeTransport::json(Protocol::encode([
                 new CloudEvent(id: '1-0', type: 'a', source: 'urn:test'),
                 new CloudEvent(id: '1-1', type: 'b', source: 'urn:test'),
@@ -284,7 +293,7 @@ class RemoteTest extends TestCase
         ]);
 
         $cursor = new MemoryCursor();
-        $consumer = new Consumer($remote, 'invalidator', $cursor);
+        $consumer = new Consumer($transport, $cursor, 'invalidator', feed: 'edge');
 
         $seen = [];
         $handler = function (CloudEvent $event) use (&$seen): void {
@@ -308,13 +317,12 @@ class RemoteTest extends TestCase
      */
     public function testTipStartWorksOverHttp(): void
     {
-        $journal = new MidPollJournal('edge');
-        $producer = new Producer($journal, 'urn:test');
-        $producer->append('old');
+        $store = new MidPollStore('edge');
+        $producer = new Producer($store, 'urn:test');
+        $producer->produce('old');
 
-        $server = new FeedServer(new Feed($journal));
-        $remote = new Remote($server, 'https://cloud.example.com/v1/feeds', 'edge');
-        $consumer = new Consumer($remote, 'notifier', new MemoryCursor(), timeout: 5_000, start: Start::Tip);
+        $endpoint = new FeedServer(new Server($store));
+        $consumer = new Consumer($endpoint, new MemoryCursor(), 'notifier', feed: 'edge', timeout: 5_000, start: Start::Tip);
 
         $seen = [];
         $handler = function (CloudEvent $event) use (&$seen): void {
@@ -323,14 +331,14 @@ class RemoteTest extends TestCase
 
         $this->assertSame(1, $consumer->consume($handler));
         $this->assertSame(['landed'], $seen, 'The backlog is skipped; the mid-wait event is not');
-        $this->assertMatchesRegularExpression('/lastEventId=(%24|\$)/', $server->recorder->last()['uri']);
+        $this->assertMatchesRegularExpression('/lastEventId=(%24|\$)/', $endpoint->recorder->last()['uri']);
 
         // The position now saves as a real id, so the sentinel never
         // appears on the wire again.
-        $producer->append('after');
+        $producer->produce('after');
 
         $this->assertSame(1, $consumer->consume($handler));
         $this->assertSame(['landed', 'after'], $seen);
-        $this->assertDoesNotMatchRegularExpression('/lastEventId=(%24|\$)/', $server->recorder->last()['uri']);
+        $this->assertDoesNotMatchRegularExpression('/lastEventId=(%24|\$)/', $endpoint->recorder->last()['uri']);
     }
 }

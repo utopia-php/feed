@@ -9,7 +9,7 @@ use Utopia\Feed\Cursor;
 /**
  * No cursor store configured. Nothing is remembered.
  *
- * A no-op, unlike {@see \Utopia\Feed\Journal\None}, because the two losses are
+ * A no-op, unlike {@see \Utopia\Feed\Store\None}, because the two losses are
  * not comparable: an append that goes nowhere loses events, while a position
  * that goes nowhere only costs a replay. A consumer using this still advances
  * in memory for the life of the process, and starts again from the oldest

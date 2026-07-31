@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Feed\Journal;
+namespace Utopia\Feed\Store;
 
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Appendable;
-use Utopia\Feed\Journal;
+use Utopia\Feed\Store;
 
-class None extends Journal implements Appendable
+class None extends Store implements Appendable
 {
     public function __construct(string $name = 'none')
     {

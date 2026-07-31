@@ -7,10 +7,10 @@ namespace Utopia\Feed;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 
-// Server class: durable storage for the events — Journal\Redis, Pool, Memory.
-// A journal owns its events, so every journal also implements Appendable;
+// Server class: durable storage for the events — Store\Redis, Cache, Pool, Memory.
+// A store owns its events, so every store also implements Appendable;
 // reading another service's feed over the wire is Remote's job.
-abstract class Journal implements Readable
+abstract class Store implements Readable
 {
     protected const int POLL_INTERVAL = 500; // ms
 

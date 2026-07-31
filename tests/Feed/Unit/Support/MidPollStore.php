@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Utopia\Tests\Unit\Support;
 
 use Utopia\CloudEvents\CloudEvent;
-use Utopia\Feed\Journal\Memory;
+use Utopia\Feed\Store\Memory;
 
 /**
- * A journal where another process appends while a poll is waiting: the event
+ * A store where another process appends while a poll is waiting: the event
  * lands just before the poll loop's second read, mid-wait.
  */
-class MidPollJournal extends Memory
+class MidPollStore extends Memory
 {
     private int $reads = 0;
 

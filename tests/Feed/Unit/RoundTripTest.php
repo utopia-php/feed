@@ -7,14 +7,13 @@ namespace Utopia\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 use Utopia\Cache\Adapter\Memory as CacheMemory;
 use Utopia\Cache\Cache as UtopiaCache;
-use Utopia\Feed\Journal\Memory as MemoryJournal;
+use Utopia\Feed\Store\Memory as MemoryStore;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
 use Utopia\CloudEvents\CloudEvent;
-use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
-use Utopia\Feed\Remote;
+use Utopia\Feed\Server;
 use Utopia\Tests\Unit\Support\FeedServer;
 
 /**
@@ -27,31 +26,27 @@ class RoundTripTest extends TestCase
 {
     private Producer $producer;
 
-    private Remote $remote;
-
     private FeedServer $server;
 
     private CacheCursor $cursor;
 
     protected function setUp(): void
     {
-        $journal = new MemoryJournal('edge');
-        $this->producer = new Producer($journal, 'urn:appwrite:cloud:fra');
-        $this->server = new FeedServer(new Feed($journal));
-
-        $this->remote = new Remote($this->server, 'https://cloud.example.com/v1/feeds', 'edge');
+        $store = new MemoryStore('edge');
+        $this->producer = new Producer($store, 'urn:appwrite:cloud:fra');
+        $this->server = new FeedServer(new Server($store));
 
         $this->cursor = new CacheCursor(new UtopiaCache(new CacheMemory()));
     }
 
     private function consumer(string $name = 'invalidator', int $batch = Consumer::BATCH): Consumer
     {
-        return new Consumer($this->remote, $name, $this->cursor, $batch);
+        return new Consumer($this->server, $this->cursor, $name, feed: 'edge', batch: $batch);
     }
 
     public function testAnEventSurvivesTheWholeTrip(): void
     {
-        $this->producer->append(
+        $this->producer->produce(
             'io.appwrite.edge.invalidate-rule',
             ['tags' => ['domain' => 'example.com'], 'isAppwriteNetwork' => true],
             'example.com',
@@ -75,7 +70,7 @@ class RoundTripTest extends TestCase
     public function testTheConsumerOnlyEverSeesEachEventOnce(): void
     {
         foreach (\range(1, 5) as $i) {
-            $this->producer->append('event-' . $i);
+            $this->producer->produce('event-' . $i);
         }
 
         $consumer = $this->consumer();
@@ -87,7 +82,7 @@ class RoundTripTest extends TestCase
         $consumer->consume($handler);
         $consumer->consume($handler);
 
-        $this->producer->append('event-6');
+        $this->producer->produce('event-6');
         $consumer->consume($handler);
 
         $this->assertSame(
@@ -103,7 +98,7 @@ class RoundTripTest extends TestCase
     public function testAConsumerShippedLateDrainsTheBacklog(): void
     {
         foreach (\range(1, 3) as $i) {
-            $this->producer->append('missed-' . $i);
+            $this->producer->produce('missed-' . $i);
         }
 
         $seen = [];
@@ -121,12 +116,12 @@ class RoundTripTest extends TestCase
      */
     public function testARestartedConsumerResumesWhereItLeftOff(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('b');
+        $this->producer->produce('a');
+        $this->producer->produce('b');
 
         $this->consumer()->consume(fn (CloudEvent $event) => null);
 
-        $this->producer->append('c');
+        $this->producer->produce('c');
 
         $seen = [];
         $this->consumer()->consume(function (CloudEvent $event) use (&$seen): void {
@@ -138,9 +133,9 @@ class RoundTripTest extends TestCase
 
     public function testAFailedEventBlocksTheOnesBehindItUntilItSucceeds(): void
     {
-        $this->producer->append('a');
-        $this->producer->append('poison');
-        $this->producer->append('c');
+        $this->producer->produce('a');
+        $this->producer->produce('poison');
+        $this->producer->produce('c');
 
         $consumer = $this->consumer();
         $seen = [];
@@ -178,7 +173,7 @@ class RoundTripTest extends TestCase
     public function testTheProducerCachesFullBatchesAndNothingElse(): void
     {
         foreach (\range(1, 5) as $i) {
-            $this->producer->append('event-' . $i);
+            $this->producer->produce('event-' . $i);
         }
 
         $consumer = $this->consumer(batch: 2);
@@ -198,14 +193,14 @@ class RoundTripTest extends TestCase
 
     public function testTwoConsumersOfOneProducerAreIndependent(): void
     {
-        $this->producer->append('a');
+        $this->producer->produce('a');
 
         $one = $this->consumer('one');
         $two = $this->consumer('two');
 
         $this->assertSame(1, $one->consume(fn (CloudEvent $event) => null));
 
-        $this->producer->append('b');
+        $this->producer->produce('b');
 
         $this->assertSame(2, $two->consume(fn (CloudEvent $event) => null), 'The second consumer starts from the beginning');
         $this->assertSame(1, $one->consume(fn (CloudEvent $event) => null), 'The first only sees what is new to it');

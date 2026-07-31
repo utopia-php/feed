@@ -8,32 +8,32 @@ use PHPUnit\Framework\TestCase;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
-use Utopia\Feed\Feed;
+use Utopia\Feed\Server;
 use Utopia\Feed\Id;
-use Utopia\Feed\Journal\Memory;
-use Utopia\Feed\Journal\None;
+use Utopia\Feed\Store\Memory;
+use Utopia\Feed\Store\None;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Remote;
 use Utopia\Tests\Unit\Support\FakeTransport;
 
 class ProducerTest extends TestCase
 {
-    private Memory $journal;
+    private Memory $store;
 
     private Producer $producer;
 
-    private Feed $feed;
+    private Server $server;
 
     protected function setUp(): void
     {
-        $this->journal = new Memory('edge');
-        $this->producer = new Producer($this->journal, 'urn:appwrite:cloud:fra');
-        $this->feed = new Feed($this->journal);
+        $this->store = new Memory('edge');
+        $this->producer = new Producer($this->store, 'urn:appwrite:cloud:fra');
+        $this->server = new Server($this->store);
     }
 
-    public function testAppendReturnsAPosition(): void
+    public function testProduceReturnsAPosition(): void
     {
-        $id = $this->producer->append('io.appwrite.edge.invalidate', ['tags' => ['project' => 'p1']]);
+        $id = $this->producer->produce('io.appwrite.edge.invalidate', ['tags' => ['project' => 'p1']]);
 
         $this->assertTrue(Id::isValid($id));
     }
@@ -41,12 +41,12 @@ class ProducerTest extends TestCase
     /** @return list<CloudEvent> */
     private function events(): array
     {
-        return \array_values(\iterator_to_array($this->feed->read()));
+        return \array_values(\iterator_to_array($this->server->read()));
     }
 
-    public function testStampsTheSourceAndTimeOnAppend(): void
+    public function testStampsTheSourceAndTimeOnProduce(): void
     {
-        $this->producer->append('test');
+        $this->producer->produce('test');
 
         $event = $this->events()[0];
 
@@ -56,13 +56,13 @@ class ProducerTest extends TestCase
     }
 
     /**
-     * Recording it at append rather than at read keeps it correct for a feed
+     * Recording it when produced rather than when read keeps it correct for a feed
      * read back somewhere other than where it was written.
      */
-    public function testKeepsTheSourceOfTheProducerThatAppended(): void
+    public function testKeepsTheSourceOfTheProducerThatProduced(): void
     {
-        (new Producer($this->journal, 'urn:appwrite:cloud:fra'))->append('test');
-        (new Producer($this->journal, 'urn:appwrite:cloud:nyc'))->append('test');
+        (new Producer($this->store, 'urn:appwrite:cloud:fra'))->produce('test');
+        (new Producer($this->store, 'urn:appwrite:cloud:nyc'))->produce('test');
 
         $events = $this->events();
 
@@ -93,14 +93,14 @@ class ProducerTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        $this->producer->append('');
+        $this->producer->produce('');
     }
 
     public function testRejectsAPayloadThatCannotBeEncoded(): void
     {
         $this->expectException(Invalid::class);
 
-        $this->producer->append('test', ['resource' => \fopen('php://memory', 'r')]);
+        $this->producer->produce('test', ['resource' => \fopen('php://memory', 'r')]);
     }
 
     /**
@@ -111,17 +111,17 @@ class ProducerTest extends TestCase
     {
         $this->expectException(Invalid::class);
 
-        new Producer($this->journal, '');
+        new Producer($this->store, '');
     }
 
     /**
-     * A remote feed belongs to whoever appends to it, so Remote is neither a
-     * Journal nor Appendable — the mistake is a type error at construction
+     * A remote feed belongs to whoever produces into it, so Remote is neither
+     * a Store nor Appendable — the mistake is a type error at construction
      * rather than an exception once an event is already in hand.
      */
     public function testARemoteFeedIsRejectedOnConstruction(): void
     {
-        $remote = new Remote(FakeTransport::of([]), 'https://cloud.example.com/v1/feeds', 'edge');
+        $remote = new Remote(FakeTransport::of([]), 'edge');
 
         $this->expectException(\TypeError::class);
 
@@ -135,6 +135,6 @@ class ProducerTest extends TestCase
 
         $this->expectException(Unsupported::class);
 
-        $producer->append('test');
+        $producer->produce('test');
     }
 }

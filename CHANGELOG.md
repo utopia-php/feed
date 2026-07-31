@@ -2,12 +2,35 @@
 
 ## Unreleased
 
-- **Breaking:** `Feed::read()` and `Feed::poll()` return a `Batch` instead of
-  a plain event array. A batch counts and iterates as its events and carries
-  the limit it was actually built with, so `Batch::cacheControl()` can never
-  be fed a number the read did not use. `Batch::toArray()` is the wire
-  encoding, `Batch::lastId()` the position a stateless relay tracks.
-- Added `Feed::serve(array $query): Batch` — the whole HTTP request in one
+- **Breaking (the three classes):** the library is now three main classes.
+  `Producer` writes events to a feed with `produce()` (formerly `append()`;
+  `publish()` still takes a prepared `CloudEvent`). `Server` (formerly
+  `Feed`) is the HTTP feed endpoint, with `serve()` as its main method.
+  `Consumer` reads a feed as a client with `consume()`.
+- **Breaking:** `Journal` is now `Store` — `Store\Redis`, `Store\Pool`,
+  `Store\Memory`, `Store\None`, in the `Utopia\Feed\Store` namespace. The
+  `Producer` and `Server` are built over a store; `Appendable` and `Readable`
+  are unchanged as its contracts.
+- **Breaking:** `Consumer` no longer takes an endpoint. It is built straight
+  over a [utopia-php/client](https://github.com/utopia-php/client) whose
+  base URI points at the feed endpoint (`withBaseUri()`), plus the feed's
+  name: `new Consumer($client, $cursor, name: 'invalidator', feed: 'edge')`.
+  A local store still drops in for the client, for consuming a feed the same
+  service produces; the cursor moved forward to the second parameter.
+  `Remote` accordingly lost its `endpoint` parameter — the feed name is sent
+  as a relative path and the client resolves it.
+- Added `Store\Cache` — a feed on a [utopia-php/cache](https://github.com/utopia-php/cache)
+  `Cache`, for a producer whose service already carries a cache and does not
+  want another backend. The whole feed lives under one key (last-writer-wins
+  appends — run one producing process), trims to `maxSize`, and expires `ttl`
+  seconds after the last append (default 30 days). Both `Store` and `Cursor`
+  now have `Redis` and `Cache` adapters.
+- `Server::read()` and `Server::poll()` return a `Batch` instead of a plain
+  event array. A batch counts and iterates as its events and carries the
+  limit it was actually built with, so `Batch::cacheControl()` can never be
+  fed a number the read did not use. `Batch::toArray()` is the wire encoding,
+  `Batch::lastId()` the position a stateless relay tracks.
+- Added `Server::serve(array $query): Batch` — the whole HTTP request in one
   call: extracts `lastEventId`, `limit` and `timeout` from the route's raw
   query parameters, coerces and clamps them, and rejects a malformed
   `lastEventId` with `Exception\Invalid`. A route never needs to name
@@ -16,34 +39,30 @@
   starting at the tip of the feed (only what happens from now on) instead of
   draining the backlog. Rides a protocol extension: the `lastEventId` value
   `$`, resolved by the producer to the newest event as the request arrives.
-  Also added `Feed::tip()`, the id of the newest event in a local journal.
+  Also added `Server::tip()`, the id of the newest event in a local store.
 - Added `Consumer::seek(string $eventId)` — set the position explicitly: the
   id is treated as the last event handled, persisted immediately, and the
   next `consume()` starts strictly after it. The operational escape hatch for
   a poison event: seek to the failing event's own id to step past it
   deliberately.
-- The long-poll read interval is now a constructor option on `Journal\Redis`,
-  `Journal\Pool` and `Journal\Memory`: `pollInterval`, in milliseconds,
-  default 500. An interval below 1 ms throws `Exception\Invalid`. The poll
-  loop also no longer oversleeps: it sleeps the remaining time when less than
-  an interval is left, so a timeout is honoured to within scheduler precision
-  instead of running up to one interval late.
+- The long-poll read interval is now a constructor option on the stores:
+  `pollInterval`, in milliseconds, default 500. An interval below 1 ms throws
+  `Exception\Invalid`. The poll loop also no longer oversleeps: it sleeps the
+  remaining time when less than an interval is left, so a timeout is honoured
+  to within scheduler precision instead of running up to one interval late.
 - **Breaking (renames):** every user-facing name now belongs to exactly one
   side of the wire. `Journal\Http` is gone; its replacement is
   `Utopia\Feed\Remote` — another service's feed, over HTTP — a standalone
   class implementing the new `Readable` interface (`read`, `poll`, `tip`,
-  `getName`) rather than posing as a journal. `Consumer` accepts any
-  `Readable` (a `Remote`, or a local journal) instead of a `Feed`, and clamps
-  its own `batch`/`timeout`; `Feed` is server vocabulary, built over the
-  journal it serves. The protocol limits moved with the responsibility:
+  `getName`) rather than posing as a store. `Consumer` clamps its own
+  `batch`/`timeout`. The protocol limits moved with the responsibility:
   `Feed::MAX_BATCH`/`Feed::MAX_TIMEOUT` are now `Protocol::MAX_BATCH` and
   `Protocol::MAX_TIMEOUT`.
-
 - **Breaking (wire format):** a feed batch on the wire is now the plain JSON
   array of CloudEvents that [http-feeds.org](https://www.http-feeds.org/)
   defines — the `{total, events}` envelope is gone, and an empty feed
   serializes to `[]`. `Protocol::encode()` returns the bare array,
-  `Protocol::decode()` expects one, and the HTTP journal asks for the spec's
+  `Protocol::decode()` expects one, and `Remote` asks for the spec's
   `application/cloudevents-batch+json` media type (`Protocol::MEDIA_TYPE`).
   Both sides of a feed must move together.
 

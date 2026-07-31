@@ -4,35 +4,35 @@ declare(strict_types=1);
 
 namespace Utopia\Feed;
 
-// Server class: the read view over the journal a service appends to — it
+// Server class: the read view over the store a service appends to — it
 // reads, long-polls, and serves the feed over HTTP with serve().
-class Feed
+class Server
 {
-    public function __construct(protected readonly Readable $journal)
+    public function __construct(protected readonly Readable $store)
     {
     }
 
     public function getName(): string
     {
-        return $this->journal->getName();
+        return $this->store->getName();
     }
 
     /**
-     * The id of the newest event, or null on an empty feed. Local journals
+     * The id of the newest event, or null on an empty feed. Local stores
      * only — a remote feed's producer resolves the tip sentinel instead.
      *
      * @throws Exception
      */
     public function tip(): ?string
     {
-        return $this->journal->tip();
+        return $this->store->tip();
     }
 
     public function read(?string $lastEventId = null, int $limit = Protocol::MAX_BATCH): Batch
     {
         $limit = \max(1, \min($limit, Protocol::MAX_BATCH));
 
-        return new Batch($this->journal->read($lastEventId, $limit), $limit);
+        return new Batch($this->store->read($lastEventId, $limit), $limit);
     }
 
     public function poll(?string $lastEventId = null, int $limit = Protocol::MAX_BATCH, int $timeout = 0): Batch
@@ -40,7 +40,7 @@ class Feed
         $limit = \max(1, \min($limit, Protocol::MAX_BATCH));
 
         return new Batch(
-            $this->journal->poll($lastEventId, $limit, \max(0, \min($timeout, Protocol::MAX_TIMEOUT))),
+            $this->store->poll($lastEventId, $limit, \max(0, \min($timeout, Protocol::MAX_TIMEOUT))),
             $limit,
         );
     }
