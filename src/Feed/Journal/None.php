@@ -21,6 +21,11 @@ class None extends Journal implements Appendable
         throw new Unsupported("No feed backend is configured for the {$this->name} feed");
     }
 
+    public function tip(): ?string
+    {
+        throw new Unsupported("No feed backend is configured for the {$this->name} feed");
+    }
+
     public function read(?string $lastEventId, int $limit): array
     {
         throw new Unsupported("No feed backend is configured for the {$this->name} feed");

@@ -29,6 +29,13 @@ class Pool extends Journal implements Appendable
         );
     }
 
+    public function tip(): ?string
+    {
+        return $this->pool->use(
+            fn (\Redis|\RedisCluster $redis): ?string => (new Redis($redis, $this->name, $this->maxSize))->tip()
+        );
+    }
+
     public function read(?string $lastEventId, int $limit): array
     {
         return $this->pool->use(

@@ -14,8 +14,12 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Feed;
+use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
+use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FakeTransport;
+use Utopia\Tests\Unit\Support\FeedServer;
+use Utopia\Tests\Unit\Support\MidPollJournal;
 
 class HttpJournalTest extends TestCase
 {
@@ -268,5 +272,38 @@ class HttpJournalTest extends TestCase
 
         $this->assertSame(['a', 'b', 'c'], $seen);
         $this->assertStringContainsString('lastEventId=1-1', $transport->recorder->uris()[1]);
+    }
+
+    /**
+     * The tip sentinel crosses the wire as `lastEventId=$` and the producer
+     * resolves it inside the held request — end to end, a tip consumer skips
+     * the backlog and still gets what lands mid-poll.
+     */
+    public function testTipStartWorksOverHttp(): void
+    {
+        $journal = new MidPollJournal('edge');
+        $producer = new Producer($journal, 'urn:test');
+        $producer->append('old');
+
+        $server = new FeedServer(new Feed($journal));
+        $feed = new Feed(new Http($server, 'https://cloud.example.com/v1/feeds', 'edge'));
+        $consumer = new Consumer($feed, 'notifier', new MemoryCursor(), timeout: 5_000, start: Start::Tip);
+
+        $seen = [];
+        $handler = function (CloudEvent $event) use (&$seen): void {
+            $seen[] = $event->type;
+        };
+
+        $this->assertSame(1, $consumer->consume($handler));
+        $this->assertSame(['landed'], $seen, 'The backlog is skipped; the mid-wait event is not');
+        $this->assertMatchesRegularExpression('/lastEventId=(%24|\$)/', $server->recorder->last()['uri']);
+
+        // The position now saves as a real id, so the sentinel never
+        // appears on the wire again.
+        $producer->append('after');
+
+        $this->assertSame(1, $consumer->consume($handler));
+        $this->assertSame(['landed', 'after'], $seen);
+        $this->assertDoesNotMatchRegularExpression('/lastEventId=(%24|\$)/', $server->recorder->last()['uri']);
     }
 }

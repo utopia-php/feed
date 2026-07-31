@@ -13,6 +13,7 @@ use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
+use Utopia\Feed\Protocol;
 use Utopia\Feed\Id;
 
 class FeedTest extends TestCase
@@ -306,6 +307,24 @@ class FeedTest extends TestCase
         $feed->read();
     }
 
+    public function testTipIsTheNewestEventsId(): void
+    {
+        $this->assertNull($this->feed->tip());
+
+        $this->producer->append('a');
+        $last = $this->producer->append('b');
+
+        $this->assertSame($last, $this->feed->tip());
+    }
+
+    public function testReadingFromTheTipSentinelSkipsTheBacklog(): void
+    {
+        $this->producer->append('a');
+        $this->producer->append('b');
+
+        $this->assertCount(0, $this->feed->read(Protocol::TIP));
+    }
+
     public function testServeAppliesTheDefaultsWhenNoParametersArrive(): void
     {
         $this->producer->append('a');
@@ -341,6 +360,13 @@ class FeedTest extends TestCase
         $this->expectException(Invalid::class);
 
         $this->feed->serve(['lastEventId' => 'not-a-position']);
+    }
+
+    public function testServeLetsTheTipSentinelThrough(): void
+    {
+        $this->producer->append('a');
+
+        $this->assertCount(0, $this->feed->serve(['lastEventId' => Protocol::TIP]));
     }
 
     public function testServeFallsBackToTheDefaultOnAGarbageLimit(): void

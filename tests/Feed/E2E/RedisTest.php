@@ -241,6 +241,23 @@ class RedisTest extends TestCase
         $this->assertGreaterThanOrEqual(0.4, \microtime(true) - $started);
     }
 
+    /**
+     * The tip is found with XREVRANGE, so this needs a real Redis: an empty
+     * stream has no tip, and the sentinel reads nothing that already exists.
+     */
+    public function testTheTipSentinelSkipsTheBacklog(): void
+    {
+        [$producer, $feed] = $this->feedAndProducer();
+
+        $this->assertNull($feed->tip(), 'An empty feed has no tip');
+
+        $producer->append('a');
+        $last = $producer->append('b');
+
+        $this->assertSame($last, $feed->tip());
+        $this->assertCount(0, $feed->read('$'));
+    }
+
     public function testConsumesThroughAPersistedCursor(): void
     {
         [$producer, $feed] = $this->feedAndProducer();

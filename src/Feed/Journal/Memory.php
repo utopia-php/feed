@@ -44,8 +44,17 @@ class Memory extends Journal implements Appendable
         return $id;
     }
 
+    public function tip(): ?string
+    {
+        $count = \count($this->events);
+
+        return $count === 0 ? null : $this->events[$count - 1]->id;
+    }
+
     public function read(?string $lastEventId, int $limit): array
     {
+        $lastEventId = $this->resolve($lastEventId);
+
         $after = $lastEventId === null ? null : Id::decode($lastEventId);
 
         $events = [];

@@ -12,6 +12,11 @@
   query parameters, coerces and clamps them, and rejects a malformed
   `lastEventId` with `Exception\Invalid`. A route never needs to name
   `Protocol`, which is now documented as internal plumbing.
+- Added `Start::Tip` — a consumer with no stored position can opt into
+  starting at the tip of the feed (only what happens from now on) instead of
+  draining the backlog. Rides a protocol extension: the `lastEventId` value
+  `$`, resolved by the producer to the newest event as the request arrives.
+  Also added `Feed::tip()`, the id of the newest event in a local journal.
 
 - **Breaking (wire format):** a feed batch on the wire is now the plain JSON
   array of CloudEvents that [http-feeds.org](https://www.http-feeds.org/)

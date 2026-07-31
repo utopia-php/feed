@@ -20,6 +20,7 @@ class Consumer
         protected readonly Cursor $cursor,
         protected readonly int $batch = self::BATCH,
         protected readonly int $timeout = 0,
+        protected readonly Start $start = Start::Oldest,
     ) {
         if ($name === '') {
             throw new Exception\Invalid('Feed consumer requires a name');
@@ -33,7 +34,7 @@ class Consumer
 
     public function consume(callable $handler): int
     {
-        $batch = $this->feed->poll($this->position(), $this->batch, $this->timeout);
+        $batch = $this->feed->poll($this->position() ?? $this->origin(), $this->batch, $this->timeout);
 
         if ($batch->isEmpty()) {
             return 0;
@@ -65,6 +66,18 @@ class Consumer
         }
 
         return $handled;
+    }
+
+    /**
+     * Where a poll starts when no position is stored: the oldest retained
+     * event, or — for Start::Tip — the tip sentinel, which the journal (or
+     * the remote producer, inside the same request) resolves to "now". Once
+     * events are handled and the cursor saves, the sentinel never appears
+     * again; reset() forgets the position, so the next poll anchors anew.
+     */
+    private function origin(): ?string
+    {
+        return $this->start === Start::Tip ? Protocol::TIP : null;
     }
 
     public function position(): ?string

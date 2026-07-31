@@ -8,6 +8,7 @@ use Psr\Http\Client\ClientExceptionInterface;
 use Utopia\Client\Adapter;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
+use Utopia\Feed\Exception\Unsupported;
 use Utopia\Feed\Journal;
 use Utopia\Feed\Protocol;
 use Utopia\Psr7\Header;
@@ -26,6 +27,16 @@ class Http extends Journal
         parent::__construct($name);
 
         $this->requests = new RequestFactory();
+    }
+
+    /**
+     * Never called on the consumer path: the tip sentinel is passed through
+     * as `lastEventId=$` and the producer resolves it inside the same
+     * request, so there is no separate tip round trip to race.
+     */
+    public function tip(): ?string
+    {
+        throw new Unsupported("The {$this->name} feed is remote; its producer resolves the tip");
     }
 
     public function read(?string $lastEventId, int $limit): array

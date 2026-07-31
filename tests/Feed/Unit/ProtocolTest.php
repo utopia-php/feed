@@ -27,6 +27,15 @@ class ProtocolTest extends TestCase
         ], Protocol::query('1-0', 500, 20000));
     }
 
+    /**
+     * The tip sentinel rides the lastEventId parameter unchanged — the
+     * producer resolves it, and it can never collide with a real position.
+     */
+    public function testQueryPassesTheTipSentinelThrough(): void
+    {
+        $this->assertSame(['lastEventId' => '$'], Protocol::query(Protocol::TIP));
+    }
+
     public function testEncodesABatchAsAPlainArrayOfEvents(): void
     {
         $payload = Protocol::encode([

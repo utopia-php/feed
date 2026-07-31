@@ -99,6 +99,24 @@ while (true) {
 }
 ```
 
+A consumer with no stored position starts at the oldest retained event. A
+consumer that must not act on the backlog — a notifier announcing events as
+they happen — opts into starting at the tip instead:
+
+```php
+use Utopia\Feed\Start;
+
+$consumer = new Consumer($feed, 'notifier', $cursor, timeout: 20_000, start: Start::Tip);
+```
+
+A stored position always wins; `Start::Tip` only applies on the first run, or
+after `reset()` — which with `Start::Tip` means "forget everything, resume
+from now". Give a tip consumer a `timeout`: the producer anchors "now" as each
+poll arrives, so new events land inside the held request rather than in the
+gap between polls. Against a producer that predates the tip extension, the
+first poll fails with a 4xx `Transport` error rather than silently replaying
+the backlog.
+
 ### Consume another service's feed
 
 Same code, different journal — nothing above it knows the events arrive over the
@@ -155,9 +173,11 @@ empty array means the consumer is caught up. The media type is
 `application/cloudevents-batch+json`; on receipt this library only checks the
 body shape, so a feed answering `application/json` still reads fine.
 
-The spec defines two query parameters: `lastEventId` and `timeout`. The
-`limit` parameter is this library's extension beyond the spec — a
-spec-compliant consumer simply never sends it, and gets full batches.
+The spec defines two query parameters: `lastEventId` and `timeout`. This
+library extends it with two more pieces of vocabulary: the `limit` parameter,
+and the `lastEventId` value `$`, which the producer resolves to the tip of the
+feed — the anchor behind `Start::Tip`. A spec-compliant consumer simply never
+sends either, and a `$` can never collide with a real id.
 
 A full batch is settled history and `cacheControl()` marks it cacheable; a
 short one is the live end of the feed and is marked `no-store`. Caching is
@@ -278,7 +298,8 @@ later events on top of state that was never updated.
 
 **A consumer with no position starts at the oldest retained event, never at the
 tip**, so a consumer deployed after the producer catches up rather than dropping
-the backlog.
+the backlog. Starting at the tip is strictly opt-in, per consumer, with
+`Start::Tip`.
 
 ## Rolling out a feed
 

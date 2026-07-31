@@ -35,8 +35,25 @@ class Redis extends Journal implements Appendable
         return $id;
     }
 
+    public function tip(): ?string
+    {
+        try {
+            $entries = $this->redis->xRevRange('feed:' . $this->name, '+', '-', 1);
+        } catch (\RedisException $error) {
+            throw new Transport("Failed to read the {$this->name} feed: {$error->getMessage()}", previous: $error);
+        }
+
+        if (!\is_array($entries) || $entries === []) {
+            return null;
+        }
+
+        return (string) \array_key_first($entries);
+    }
+
     public function read(?string $lastEventId, int $limit): array
     {
+        $lastEventId = $this->resolve($lastEventId);
+
         $start = $lastEventId === null ? '-' : Id::after($lastEventId);
 
         try {

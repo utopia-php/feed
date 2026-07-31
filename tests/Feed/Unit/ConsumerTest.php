@@ -14,7 +14,9 @@ use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
+use Utopia\Feed\Start;
 use Utopia\Tests\Unit\Support\FailingCursor;
+use Utopia\Tests\Unit\Support\MidPollJournal;
 
 class ConsumerTest extends TestCase
 {
@@ -297,6 +299,88 @@ class ConsumerTest extends TestCase
 
         $this->assertSame(['a', 'b'], $seen, 'The handler still saw the batch');
         $this->assertNotNull($consumer->position(), 'The in-memory position still moved');
+    }
+
+    public function testTipStartDoesNotAnnounceTheBacklog(): void
+    {
+        $this->producer->append('old-1');
+        $this->producer->append('old-2');
+
+        $consumer = new Consumer($this->feed, 'notifier', $this->cursor, start: Start::Tip);
+
+        $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
+        $this->assertNull($this->cursor->load('edge', 'notifier'), 'Skipping the backlog is not progress to commit');
+    }
+
+    /**
+     * The tip is pinned when the poll starts, so an event landing while the
+     * poll waits is delivered — only the backlog is skipped.
+     */
+    public function testTipStartDeliversWhatLandsMidPoll(): void
+    {
+        $journal = new MidPollJournal('edge');
+        (new Producer($journal, 'urn:test'))->append('old');
+
+        $cursor = new MemoryCursor();
+        $consumer = new Consumer(new Feed($journal), 'notifier', $cursor, timeout: 5_000, start: Start::Tip);
+
+        $seen = [];
+        $count = $consumer->consume(function (CloudEvent $event) use (&$seen): void {
+            $seen[] = $event->type;
+        });
+
+        $this->assertSame(1, $count);
+        $this->assertSame(['landed'], $seen, 'The backlog is skipped; the mid-wait event is not');
+        $this->assertNotNull($cursor->load('edge', 'notifier'), 'Handling the event saves the position');
+    }
+
+    public function testAStoredCursorBeatsTipStart(): void
+    {
+        $first = $this->producer->append('a');
+        $this->producer->append('b');
+
+        $this->cursor->save('edge', 'invalidator', $first);
+
+        $consumer = new Consumer($this->feed, 'invalidator', $this->cursor, start: Start::Tip);
+
+        $this->assertSame(['b'], $this->drain($consumer), 'A restart must not skip the gap');
+    }
+
+    public function testResetWithTipStartResumesFromNow(): void
+    {
+        $first = $this->producer->append('a');
+        $this->producer->append('b');
+        $this->cursor->save('edge', 'invalidator', $first);
+
+        $consumer = new Consumer($this->feed, 'invalidator', $this->cursor, start: Start::Tip);
+
+        $this->assertSame(['b'], $this->drain($consumer), 'The stored position still wins before the reset');
+
+        $consumer->reset();
+
+        $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null), 'After reset, the backlog is forgotten');
+    }
+
+    public function testTipStartOnAnEmptyFeedWaitsOutTheTimeoutEmpty(): void
+    {
+        $consumer = new Consumer($this->feed, 'notifier', $this->cursor, timeout: 600, start: Start::Tip);
+
+        $started = \microtime(true);
+
+        $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
+        $this->assertGreaterThanOrEqual(0.4, \microtime(true) - $started, 'Must actually wait');
+    }
+
+    public function testTipStartOnAnEmptyFeedDeliversWhatLandsMidWait(): void
+    {
+        $consumer = new Consumer(new Feed(new MidPollJournal('edge')), 'notifier', $this->cursor, timeout: 5_000, start: Start::Tip);
+
+        $seen = [];
+        $consumer->consume(function (CloudEvent $event) use (&$seen): void {
+            $seen[] = $event->type;
+        });
+
+        $this->assertSame(['landed'], $seen);
     }
 
     public function testResetReplaysEverythingStillRetained(): void

@@ -30,6 +30,24 @@ abstract class Journal
     abstract public function read(?string $lastEventId, int $limit): array;
 
     /**
+     * The id of the newest event, or null when the feed is empty.
+     *
+     * @throws Exception
+     */
+    abstract public function tip(): ?string;
+
+    /**
+     * Resolve the tip sentinel into a concrete position: the newest id at the
+     * moment of the call, or null on an empty feed — which reads as "the
+     * beginning of future events". The sentinel is resolved here, before any
+     * id arithmetic; Id itself keeps rejecting it.
+     */
+    protected function resolve(?string $lastEventId): ?string
+    {
+        return $lastEventId === Protocol::TIP ? $this->tip() : $lastEventId;
+    }
+
+    /**
      * Wait for events, re-reading on an interval until some land or the
      * deadline passes. Journal\Http overrides this: there the producer does the
      * waiting, so a poll is one held request.
@@ -38,6 +56,11 @@ abstract class Journal
      */
     public function poll(?string $lastEventId, int $limit, int $timeout): array
     {
+        // The sentinel is pinned once, before the wait: re-resolving on every
+        // read would move the tip past events landing mid-poll, and they
+        // would never be delivered.
+        $lastEventId = $this->resolve($lastEventId);
+
         $deadline = \microtime(true) + $timeout / 1000;
 
         while (true) {

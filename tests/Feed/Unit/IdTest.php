@@ -26,6 +26,7 @@ class IdTest extends TestCase
             'trailing dash' => ['1690000000000-', false],
             'exclusive syntax' => ['(1690000000000-0', false],
             'range token' => ['-', false],
+            'tip sentinel' => ['$', false],
         ];
     }
 

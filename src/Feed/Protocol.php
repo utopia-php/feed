@@ -19,6 +19,14 @@ final class Protocol
 
     public const string MEDIA_TYPE = 'application/cloudevents-batch+json';
 
+    /**
+     * Extension beyond the spec, like `limit`: a `lastEventId` of `$` means
+     * "the tip of the feed". The producer resolves it to the newest event at
+     * the moment the request arrives, so a consumer can ask for only what
+     * happens from now on without a separate round trip to learn the tip.
+     */
+    public const string TIP = '$';
+
     public const string CACHE_IMMUTABLE = 'max-age=31536000';
     public const string CACHE_NONE = 'no-store';
 
