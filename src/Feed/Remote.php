@@ -213,6 +213,9 @@ class Remote implements Readable
             datacontenttype: self::optional($raw, 'datacontenttype'),
             data: $raw['data'] ?? null,
             dataschema: self::optional($raw, 'dataschema'),
+            // The docblock wants array<string, mixed>, but a digit-only
+            // extension name — legal per the spec — is an integer key in PHP.
+            // @phpstan-ignore argument.type
             extensions: $extensions,
         );
     }

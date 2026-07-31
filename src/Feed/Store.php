@@ -99,6 +99,9 @@ abstract class Store implements Readable
         $event += \is_array($extensions) ? $extensions : [];
 
         try {
+            // The docblock wants array<string, mixed>, but a digit-only
+            // extension name — legal per the spec — is an integer key in PHP.
+            // @phpstan-ignore argument.type
             return CloudEvent::fromArray($event);
         } catch (\InvalidArgumentException $error) {
             throw new Invalid("Feed entry {$id} could not be read as an event: {$error->getMessage()}", previous: $error);
