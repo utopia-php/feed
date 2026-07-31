@@ -22,6 +22,12 @@
   next `consume()` starts strictly after it. The operational escape hatch for
   a poison event: seek to the failing event's own id to step past it
   deliberately.
+- The long-poll read interval is now a constructor option on `Journal\Redis`,
+  `Journal\Pool` and `Journal\Memory`: `pollInterval`, in milliseconds,
+  default 500. An interval below 1 ms throws `Exception\Invalid`. The poll
+  loop also no longer oversleeps: it sleeps the remaining time when less than
+  an interval is left, so a timeout is honoured to within scheduler precision
+  instead of running up to one interval late.
 
 - **Breaking (wire format):** a feed batch on the wire is now the plain JSON
   array of CloudEvents that [http-feeds.org](https://www.http-feeds.org/)

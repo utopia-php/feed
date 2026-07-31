@@ -15,9 +15,9 @@ class MidPollJournal extends Memory
 {
     private int $reads = 0;
 
-    public function __construct(string $name, private readonly string $lands = 'landed')
+    public function __construct(string $name, private readonly string $lands = 'landed', int $pollInterval = self::POLL_INTERVAL)
     {
-        parent::__construct($name);
+        parent::__construct($name, pollInterval: $pollInterval);
     }
 
     public function read(?string $lastEventId, int $limit): array

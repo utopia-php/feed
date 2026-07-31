@@ -17,9 +17,12 @@ class Memory extends Journal implements Appendable
     private int $timestamp = 0;
     private int $sequence = -1;
 
-    public function __construct(string $name, protected readonly int $maxSize = 100_000)
-    {
-        parent::__construct($name);
+    public function __construct(
+        string $name,
+        protected readonly int $maxSize = 100_000,
+        int $pollInterval = self::POLL_INTERVAL,
+    ) {
+        parent::__construct($name, $pollInterval);
     }
 
     public function append(CloudEvent $event): string

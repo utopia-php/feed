@@ -16,8 +16,9 @@ class Redis extends Journal implements Appendable
         protected readonly \Redis|\RedisCluster $redis,
         string $name,
         protected readonly int $maxSize = 100_000,
+        int $pollInterval = self::POLL_INTERVAL,
     ) {
-        parent::__construct($name);
+        parent::__construct($name, $pollInterval);
     }
 
     public function append(CloudEvent $event): string

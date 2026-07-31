@@ -15,6 +15,7 @@ use Utopia\Feed\Feed;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Protocol;
 use Utopia\Feed\Id;
+use Utopia\Tests\Unit\Support\MidPollJournal;
 
 class FeedTest extends TestCase
 {
@@ -261,6 +262,49 @@ class FeedTest extends TestCase
 
         $this->assertCount(0, $this->feed->poll());
         $this->assertLessThan(0.4, \microtime(true) - $started);
+    }
+
+    public function testAShorterPollIntervalDeliversAMidPollEventSooner(): void
+    {
+        $journal = new MidPollJournal('edge', pollInterval: 20);
+
+        $started = \microtime(true);
+        $events = $journal->poll(null, 10, 5_000);
+        $elapsed = \microtime(true) - $started;
+
+        $this->assertCount(1, $events);
+        $this->assertLessThan(0.4, $elapsed, 'A 20ms interval must beat the default 500ms floor');
+    }
+
+    /**
+     * The overshoot fix: the loop must sleep the remaining time when that is
+     * less than the interval, not a full interval past the deadline.
+     */
+    public function testPollHonoursATimeoutShorterThanTheInterval(): void
+    {
+        $journal = new Memory('edge', pollInterval: 500);
+
+        $started = \microtime(true);
+        $events = $journal->poll(null, 10, 100);
+        $elapsed = \microtime(true) - $started;
+
+        $this->assertSame([], $events);
+        $this->assertGreaterThanOrEqual(0.08, $elapsed, 'Must actually wait out the timeout');
+        $this->assertLessThan(0.3, $elapsed, 'Must not sleep a full interval past the deadline');
+    }
+
+    public function testRejectsAZeroPollInterval(): void
+    {
+        $this->expectException(Invalid::class);
+
+        new Memory('edge', pollInterval: 0);
+    }
+
+    public function testRejectsANegativePollInterval(): void
+    {
+        $this->expectException(Invalid::class);
+
+        new Memory('edge', pollInterval: -5);
     }
 
     public function testRetentionIsBoundedAndTrimsTheOldest(): void

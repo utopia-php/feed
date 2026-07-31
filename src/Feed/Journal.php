@@ -12,12 +12,25 @@ use Utopia\Feed\Exception\Invalid;
 // feed over the wire. Journals that own their events also implement Appendable.
 abstract class Journal
 {
-    protected const int POLL_INTERVAL = 500_000; // 0.5s
+    protected const int POLL_INTERVAL = 500; // ms
 
-    public function __construct(protected readonly string $name)
-    {
+    /**
+     * @param int $pollInterval How long poll() sleeps between reads, in
+     *        milliseconds. Shorter lowers long-poll latency and raises the
+     *        backend read rate.
+     */
+    public function __construct(
+        protected readonly string $name,
+        protected readonly int $pollInterval = self::POLL_INTERVAL,
+    ) {
         if ($name === '') {
             throw new Invalid('Feed name is required');
+        }
+
+        // A zero interval is a busy-spin against the backend; clamping
+        // silently would hide the misconfiguration.
+        if ($pollInterval < 1) {
+            throw new Invalid('Feed poll interval must be at least 1 millisecond');
         }
     }
 
@@ -66,11 +79,15 @@ abstract class Journal
         while (true) {
             $events = $this->read($lastEventId, $limit);
 
-            if ($events !== [] || \microtime(true) >= $deadline) {
+            $remaining = $deadline - \microtime(true);
+
+            if ($events !== [] || $remaining <= 0) {
                 return $events;
             }
 
-            \usleep(self::POLL_INTERVAL);
+            // Never sleep past the deadline: the timeout is honoured to
+            // within scheduler precision, not to within one interval.
+            \usleep((int) \min($this->pollInterval * 1000, \ceil($remaining * 1_000_000)));
         }
     }
 

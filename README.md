@@ -233,6 +233,13 @@ the ones that own their events also implement `Appendable` and assign the ids.
 whole timeout, and this one borrows a connection per read and gives it back while
 it waits, so polling never ties up the client the rest of the service is using.
 
+A long poll is served by re-reading the journal on an interval — `pollInterval`,
+a trailing constructor option in milliseconds, 500 by default. A shorter
+interval lowers long-poll latency and raises the read rate against the backend.
+The loop is deliberate: Redis could wait server-side with `XREAD BLOCK`, but a
+blocking read holds the connection for the whole wait, which is exactly what
+`Journal\Pool`'s borrow-per-read strategy exists to avoid.
+
 `Journal\Redis` and `Journal\Pool` trim the stream to about `maxSize` entries
 (100,000 by default, and the same for `Journal\Memory`; Redis trims
 approximately, so the stream may run a little longer). That cap is the feed's

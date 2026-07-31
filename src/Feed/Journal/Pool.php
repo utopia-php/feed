@@ -18,28 +18,37 @@ class Pool extends Journal implements Appendable
         protected readonly UtopiaPool $pool,
         string $name,
         protected readonly int $maxSize = 100_000,
+        int $pollInterval = self::POLL_INTERVAL,
     ) {
-        parent::__construct($name);
+        parent::__construct($name, $pollInterval);
+    }
+
+    // The interval only matters in this class's own inherited poll() loop —
+    // the inner journal lives for a single read — but it is passed through so
+    // a future change to the inner journal cannot silently drop it.
+    private function inner(\Redis|\RedisCluster $redis): Redis
+    {
+        return new Redis($redis, $this->name, $this->maxSize, $this->pollInterval);
     }
 
     public function append(CloudEvent $event): string
     {
         return $this->pool->use(
-            fn (\Redis|\RedisCluster $redis): string => (new Redis($redis, $this->name, $this->maxSize))->append($event)
+            fn (\Redis|\RedisCluster $redis): string => $this->inner($redis)->append($event)
         );
     }
 
     public function tip(): ?string
     {
         return $this->pool->use(
-            fn (\Redis|\RedisCluster $redis): ?string => (new Redis($redis, $this->name, $this->maxSize))->tip()
+            fn (\Redis|\RedisCluster $redis): ?string => $this->inner($redis)->tip()
         );
     }
 
     public function read(?string $lastEventId, int $limit): array
     {
         return $this->pool->use(
-            fn (\Redis|\RedisCluster $redis): array => (new Redis($redis, $this->name, $this->maxSize))->read($lastEventId, $limit)
+            fn (\Redis|\RedisCluster $redis): array => $this->inner($redis)->read($lastEventId, $limit)
         );
     }
 }
