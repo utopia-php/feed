@@ -15,6 +15,16 @@ LABEL maintainer="team@appwrite.io"
 
 WORKDIR /code
 
+# pcov rather than Xdebug: it only does line coverage, which is all a report
+# needs, and costs a fraction of the run time. Loaded but switched off, so
+# every ordinary run is unaffected — `composer coverage` turns it on for the
+# one run that wants it.
+RUN apk add --no-cache --virtual .pcov-build-deps $PHPIZE_DEPS \
+    && pecl install pcov \
+    && docker-php-ext-enable pcov \
+    && echo 'pcov.enabled=0' >> /usr/local/etc/php/conf.d/docker-php-ext-pcov.ini \
+    && apk del .pcov-build-deps
+
 COPY --from=vendor /src/vendor /code/vendor
 
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer

@@ -23,6 +23,8 @@
         "test:http": "vendor/bin/phpunit --testsuite http",
         "test:redis": "vendor/bin/phpunit --testsuite redis",
         "test:pool": "vendor/bin/phpunit --testsuite pool",
+        "coverage": "php -d pcov.enabled=1 -d pcov.directory=src vendor/bin/phpunit --testsuite unit,memory,cache,http --coverage-text --coverage-clover coverage.xml",
+        "coverage:all": "php -d pcov.enabled=1 -d pcov.directory=src vendor/bin/phpunit --testsuite unit,memory,cache,http,redis,pool --coverage-text --coverage-clover coverage.xml",
         "check": "vendor/bin/phpstan analyse --memory-limit=1G",
         "lint": "vendor/bin/pint --test",
         "format": "vendor/bin/pint"

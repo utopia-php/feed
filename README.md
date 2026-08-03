@@ -399,6 +399,18 @@ docker compose exec tests composer check
 
 CI runs every suite as its own job, so a failing adapter is visible by name.
 
+Coverage is measured over `src/` with [pcov](https://github.com/krakjoe/pcov),
+which the test image carries loaded but switched off so ordinary runs are
+unaffected:
+
+```bash
+docker compose exec tests composer coverage      # service-free suites, ~8s
+docker compose exec tests composer coverage:all  # every suite, needs Redis
+```
+
+CI prints the full report on every run. There is no threshold: the number is
+there to be read, and a badly chosen gate is worse than none.
+
 To test another PHP version, build with `PHP_VERSION=8.6 docker compose build`,
 and add it to the `php-versions` matrix in `.github/workflows/tests.yml`.
 

@@ -15,6 +15,16 @@
         means that adapter honours the whole contract. `unit` needs no
         services; `redis` and `pool` need the compose Redis.
     -->
+    <!--
+        Coverage is measured over src/ only, so a report says what the suite
+        exercises of the library rather than of its own fixtures.
+    -->
+    <source>
+        <include>
+            <directory suffix=".php">./src</directory>
+        </include>
+    </source>
+
     <testsuites>
         <testsuite name="unit">
             <directory>./tests/Feed/Unit</directory>
