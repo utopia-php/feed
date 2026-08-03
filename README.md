@@ -342,12 +342,17 @@ whole contract. Producer and Server run per store (`memory`, `cache`, `redis`,
 provoke: a cursor store that is down, a body that is not a batch, a backend
 that was never configured.
 
-The service-free suites need no Redis, but dependencies declare extensions the
-suites never touch (`ext-redis`, `ext-memcached`, `ext-protobuf`), so install
-past them:
+The service-free suites need no Redis, but `utopia-php/cache` declares
+`ext-redis` and `ext-memcached` and `utopia-php/telemetry` declares
+`ext-protobuf`, none of which those suites touch. Install past exactly those
+rather than with a blanket `--ignore-platform-reqs`, which would also skip the
+PHP version check this library actually depends on:
 
 ```bash
-composer install --ignore-platform-reqs
+composer install \
+    --ignore-platform-req=ext-redis \
+    --ignore-platform-req=ext-memcached \
+    --ignore-platform-req=ext-protobuf
 composer test          # unit + memory + cache + http
 ```
 
@@ -372,6 +377,14 @@ Utopia Feed requires PHP 8.5 or later. This library is maintained by the
 [Appwrite team](https://appwrite.io) and, although part of the
 [Utopia Framework](https://github.com/utopia-php/framework), it is dependency
 light and works standalone with any PHP project.
+
+`ext-redis` is a suggestion, not a requirement: it is needed by
+`Store\Redis`, `Store\Pool`, `Cursor\Redis` and `Cursor\Pool`, and a service
+using the memory or cache adapters, or consuming a feed over HTTP, never loads
+those classes. Note that `utopia-php/cache` requires `ext-redis` and
+`ext-memcached` itself, so a machine without them still needs
+`--ignore-platform-req` to install — that constraint comes from the cache
+package rather than from this one.
 
 ## Copyright and license
 

@@ -40,7 +40,6 @@
     "require": {
         "php": ">=8.5",
         "ext-json": "*",
-        "ext-redis": "*",
         "psr/http-client": "^1.0",
         "psr/http-message": "^2.0",
         "utopia-php/cache": "3.*",
@@ -48,6 +47,9 @@
         "utopia-php/pools": "1.*",
         "utopia-php/psr7": "^0.2",
         "utopia-php/cloudevents": "0.1.*"
+    },
+    "suggest": {
+        "ext-redis": "Required by the Store\\Redis, Store\\Pool, Cursor\\Redis and Cursor\\Pool adapters. The other adapters, and consuming a feed over HTTP, work without it"
     },
     "require-dev": {
         "laravel/pint": "^1.21",
