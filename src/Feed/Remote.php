@@ -16,8 +16,9 @@ use Utopia\Psr7\Request\Factory as RequestFactory;
 
 class Remote implements Readable
 {
-    /** The batch media type on the wire — sent as `Accept` with every read. */
-    public const string MEDIA_TYPE = 'application/cloudevents-batch+json';
+    // MEDIA_TYPE — sent as `Accept` with every read — is inherited from
+    // Readable, so the header this asks for and the one Batch is served with
+    // are the same value rather than two copies of it.
 
     // The request parameters of https://www.http-feeds.org/.
     private const string PARAM_LAST_EVENT_ID = 'lastEventId';

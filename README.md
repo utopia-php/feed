@@ -34,6 +34,7 @@ The server side is three objects over one store — where the events live, here
 a capped Redis stream:
 
 ```php
+use Utopia\Feed\Batch;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Server;
 use Utopia\Feed\Store;
@@ -56,7 +57,7 @@ $server = new Server($store);
 $batch = $server->serve($request->getParams());
 
 $response
-    ->addHeader('Content-Type', 'application/cloudevents-batch+json')
+    ->addHeader('Content-Type', Batch::MEDIA_TYPE) // application/cloudevents-batch+json
     ->addHeader('Cache-Control', $batch->cacheControl(public: true))
     ->json($batch->toArray());
 ```

@@ -12,8 +12,12 @@ use Utopia\CloudEvents\CloudEvent;
  */
 final class Batch implements \Countable, \IteratorAggregate
 {
-    /** The batch media type on the wire — what a feed response's Content-Type carries. */
-    public const string MEDIA_TYPE = 'application/cloudevents-batch+json';
+    /**
+     * What a feed response's `Content-Type` carries — the serving side's name
+     * for {@see Readable::MEDIA_TYPE}, which is where the value lives so the
+     * two sides of the wire cannot drift apart.
+     */
+    public const string MEDIA_TYPE = Readable::MEDIA_TYPE;
 
     private const string CACHE_IMMUTABLE = 'max-age=31536000';
     private const string CACHE_NONE = 'no-store';

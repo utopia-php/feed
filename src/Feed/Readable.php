@@ -16,6 +16,13 @@ interface Readable
      */
     public const string TIP = '$';
 
+    /**
+     * The batch media type on the wire. One side's `Content-Type` is the
+     * other side's `Accept`, so it lives here with the rest of the contract
+     * the serving and consuming sides share rather than once on each.
+     */
+    public const string MEDIA_TYPE = 'application/cloudevents-batch+json';
+
     /** The most events one batch may carry — producers clamp `limit` to this. */
     public const int MAX_BATCH = 1000;
 
