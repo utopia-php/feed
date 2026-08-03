@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Utopia\Cache\Cache as UtopiaCache;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Consumer;
+use Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor\Cache as CacheCursor;
 use Utopia\Feed\Cursor\None;
 use Utopia\Feed\Exception\Invalid;
@@ -118,5 +119,58 @@ class CursorTest extends TestCase
 
         $this->assertNull($consumer->position());
         $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
+    }
+
+    /**
+     * The other way a cache backend fails: it lets its own error out once the
+     * adapter's internal retries are exhausted — a raw \RedisException in
+     * production. Unwrapped, that escapes this library entirely, so the
+     * canonical consume loop retrying on Transport crashes on a backend blip
+     * instead, which is what the Transport contract exists to prevent.
+     *
+     * @dataProvider operations
+     * @param callable(Cursor): void $operation
+     */
+    public function testABackendThatIsDownRaisesTransport(callable $operation): void
+    {
+        $cursor = new CacheCursor(new UtopiaCache(new BrokenCache(raises: true)));
+
+        $this->expectException(Transport::class);
+
+        $operation($cursor);
+    }
+
+    /**
+     * @return array<string, array{callable(Cursor): void}>
+     */
+    public static function operations(): array
+    {
+        return [
+            'load' => [static function (Cursor $cursor): void {
+                $cursor->load('edge', 'invalidator');
+            }],
+            'save' => [static function (Cursor $cursor): void {
+                $cursor->save('edge', 'invalidator', '1-0');
+            }],
+            'reset' => [static function (Cursor $cursor): void {
+                $cursor->reset('edge', 'invalidator');
+            }],
+        ];
+    }
+
+    /**
+     * An unusable name is the caller's bug, not the backend's failure, and it
+     * stays Invalid even when the backend behind the cursor is also down —
+     * otherwise wrapping the store call would swallow the distinction.
+     *
+     * @dataProvider unusableNames
+     */
+    public function testAnUnusableNameIsStillInvalidOnABackendThatIsDown(string $feed, string $consumer): void
+    {
+        $cursor = new CacheCursor(new UtopiaCache(new BrokenCache(raises: true)));
+
+        $this->expectException(Invalid::class);
+
+        $cursor->load($feed, $consumer);
     }
 }

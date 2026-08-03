@@ -7,23 +7,36 @@ namespace Utopia\Tests\Support;
 use Utopia\Cache\Adapter;
 
 /**
- * A cache backend that cannot be written, for testing that the cache-backed
- * store and cursor notice.
+ * A cache backend that is down, for testing that the cache-backed store and
+ * cursor notice.
  *
- * It fails the way {@see \Utopia\Cache\Adapter\Redis} does rather than the way
- * a test double would find convenient: `save()` catches everything internally
- * and answers `false`, so a caller that only looks at the absence of an
- * exception sees a successful write.
+ * It fails the two ways {@see \Utopia\Cache\Adapter\Redis} actually fails
+ * rather than the way a test double would find convenient:
+ *
+ * - `save()` catches everything internally and answers `false`, so a caller
+ *   that only looks at the absence of an exception sees a successful write.
+ * - `load()` and `purge()` let the backend's own error out once the adapter's
+ *   internal retries are exhausted — a raw `\RedisException` in production,
+ *   stood in for here by a plain exception so the service-free suites stay
+ *   service-free. What matters is that it is not a `Utopia\Feed\Exception`.
  */
 class BrokenCache implements Adapter
 {
+    public function __construct(private readonly bool $raises = false)
+    {
+    }
+
     public function load(string $key, int $ttl, string $hash = ''): mixed
     {
+        $this->fail();
+
         return false;
     }
 
     public function save(string $key, array|string $data, string $hash = ''): bool|string|array
     {
+        $this->fail();
+
         return false;
     }
 
@@ -40,6 +53,8 @@ class BrokenCache implements Adapter
 
     public function purge(string $key, string $hash = ''): bool
     {
+        $this->fail();
+
         return false;
     }
 
@@ -61,5 +76,12 @@ class BrokenCache implements Adapter
     public function getName(?string $key = null): string
     {
         return 'broken';
+    }
+
+    private function fail(): void
+    {
+        if ($this->raises) {
+            throw new \RuntimeException('read error on connection to redis:6379');
+        }
     }
 }
