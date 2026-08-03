@@ -33,11 +33,13 @@
             <file>./tests/Feed/Producer/MemoryTest.php</file>
             <file>./tests/Feed/Server/MemoryTest.php</file>
             <file>./tests/Feed/Consumer/MemoryTest.php</file>
+            <file>./tests/Feed/Cursor/MemoryTest.php</file>
         </testsuite>
         <testsuite name="cache">
             <file>./tests/Feed/Producer/CacheTest.php</file>
             <file>./tests/Feed/Server/CacheTest.php</file>
             <file>./tests/Feed/Consumer/CacheTest.php</file>
+            <file>./tests/Feed/Cursor/CacheTest.php</file>
         </testsuite>
         <testsuite name="http">
             <file>./tests/Feed/Consumer/HttpTest.php</file>
@@ -46,11 +48,13 @@
             <file>./tests/Feed/Producer/RedisTest.php</file>
             <file>./tests/Feed/Server/RedisTest.php</file>
             <file>./tests/Feed/Consumer/RedisTest.php</file>
+            <file>./tests/Feed/Cursor/RedisTest.php</file>
         </testsuite>
         <testsuite name="pool">
             <file>./tests/Feed/Producer/PoolTest.php</file>
             <file>./tests/Feed/Server/PoolTest.php</file>
             <file>./tests/Feed/Consumer/PoolTest.php</file>
+            <file>./tests/Feed/Cursor/PoolTest.php</file>
         </testsuite>
     </testsuites>
 </phpunit>
