@@ -134,6 +134,15 @@ abstract class Base extends TestCase
         $this->server->read('not-a-position');
     }
 
+    /**
+     * Every upper bound below is set from the elapsed time the *regression*
+     * would produce, not from the time the correct code takes. A bound just
+     * above the expected duration measures the CI runner rather than the
+     * code, and fails rarely, unreproducibly, and only under load — which
+     * teaches everyone to hit re-run, which is how real regressions get
+     * waved through. Lower bounds are safe either way: a sleep cannot
+     * finish early.
+     */
     public function testPollReturnsImmediatelyWhenEventsAreWaiting(): void
     {
         $this->producer->produce('test');
@@ -142,7 +151,8 @@ abstract class Base extends TestCase
         $events = $this->server->poll(null, 10, 2000);
 
         $this->assertCount(1, $events);
-        $this->assertLessThan(1, \microtime(true) - $started);
+        // Waiting out the 2s timeout despite a full batch is the regression.
+        $this->assertLessThan(1, \microtime(true) - $started, 'Waiting events must return at once, not at the timeout');
     }
 
     public function testPollGivesUpAtTheTimeoutWithAnEmptyBatch(): void
@@ -161,7 +171,8 @@ abstract class Base extends TestCase
         $started = \microtime(true);
 
         $this->assertCount(0, $this->server->poll());
-        $this->assertLessThan(0.4, \microtime(true) - $started);
+        // Sleeping at all with no timeout costs a whole 500ms interval.
+        $this->assertLessThan(0.45, \microtime(true) - $started, 'No timeout means no sleep');
     }
 
     /**
@@ -178,7 +189,10 @@ abstract class Base extends TestCase
 
         $this->assertCount(0, $events);
         $this->assertGreaterThanOrEqual(0.08, $elapsed, 'Must actually wait out the timeout');
-        $this->assertLessThan(0.3, $elapsed, 'Must not sleep a full interval past the deadline');
+        // Overshooting means sleeping the full 500ms interval past a 100ms
+        // deadline, so anything under 0.45 catches it — with 350ms of slack
+        // over the ~100ms this takes when correct.
+        $this->assertLessThan(0.45, $elapsed, 'Must not sleep a full interval past the deadline');
     }
 
     public function testTipIsTheNewestEventsId(): void

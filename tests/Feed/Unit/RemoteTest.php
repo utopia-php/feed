@@ -166,6 +166,10 @@ class RemoteTest extends TestCase
         $started = \microtime(true);
         $remote->poll(null, 100, 5000);
 
+        // The request count is the real check — it catches a client-side loop
+        // whatever the machine is doing. The clock only guards against a wait
+        // that makes no request at all, and is bounded by the 5s a wrong
+        // implementation would take rather than the ~0s this one does.
         $this->assertLessThan(1, \microtime(true) - $started, 'Must not wait client-side');
         $this->assertCount(1, $transport->recorder->requests, 'Must not poll in a loop');
         $this->assertStringContainsString('timeout=5000', $transport->recorder->last()['uri']);
