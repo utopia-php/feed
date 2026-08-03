@@ -34,6 +34,31 @@ class HttpTest extends Base
         return $this->endpoint = new FeedServer(new Server($store));
     }
 
+    /** The feed belongs to another producer, which mints its own ids. */
+    protected function ownsItsIdFormat(): bool
+    {
+        return false;
+    }
+
+    /**
+     * http-feeds endpoints commonly use UUIDs, and `Remote` reads them fine —
+     * a consumer tracks such a position and sends it back as `lastEventId`
+     * without complaint. Judging the shape here as well would take the
+     * poison-event escape hatch away from exactly the consumers that have no
+     * way around it: the id `seek()` refused would be one the consumer itself
+     * had just handled and saved.
+     */
+    public function testSeekAcceptsTheOpaqueIdARemoteFeedMayUse(): void
+    {
+        $opaque = '550e8400-e29b-41d4-a716-446655440000';
+
+        $consumer = $this->consumer();
+        $consumer->seek($opaque);
+
+        $this->assertSame($opaque, $consumer->position());
+        $this->assertSame($opaque, $this->cursor->load($this->name, 'invalidator'), 'And it is persisted, so a restart resumes from it');
+    }
+
     public function testTheProducerCachesFullBatchesAndNothingElse(): void
     {
         foreach (\range(1, 5) as $i) {

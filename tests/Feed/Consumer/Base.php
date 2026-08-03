@@ -487,9 +487,17 @@ abstract class Base extends TestCase
     }
 
     /**
-     * @dataProvider notPositions
+     * Whether the feed under test mints the positions it pages by, and so is
+     * the authority on their shape. A local store is; another producer's feed,
+     * read over HTTP, is not.
      */
-    public function testSeekRejectsAnIdThatIsNotAPosition(string $id): void
+    protected function ownsItsIdFormat(): bool
+    {
+        return true;
+    }
+
+    /** A rejected seek must leave both positions exactly where they were. */
+    private function assertSeekRejected(string $id): void
     {
         $first = $this->producer->produce('a');
         $this->cursor->save($this->name, 'invalidator', $first);
@@ -508,15 +516,48 @@ abstract class Base extends TestCase
     }
 
     /**
+     * @dataProvider noPositions
+     */
+    public function testSeekRejectsAnIdNoFeedCouldUse(string $id): void
+    {
+        $this->assertSeekRejected($id);
+    }
+
+    /**
+     * Rejected whatever the feed is: an empty string names nothing, and the
+     * tip sentinel stands for wherever the feed ends when the request arrives
+     * — a start rather than a position.
+     *
+     * @return array<string, array{string}>
+     */
+    public static function noPositions(): array
+    {
+        return [
+            'empty' => [''],
+            'the tip sentinel' => ['$'],
+        ];
+    }
+
+    /**
+     * @dataProvider notPositions
+     */
+    public function testSeekRejectsAnIdThatIsNotAPosition(string $id): void
+    {
+        if (!$this->ownsItsIdFormat()) {
+            $this->markTestSkipped('Only the feed that mints its positions can judge their shape');
+        }
+
+        $this->assertSeekRejected($id);
+    }
+
+    /**
      * @return array<string, array{string}>
      */
     public static function notPositions(): array
     {
         return [
-            'empty' => [''],
             'not an id' => ['abc'],
             'too many parts' => ['1-2-3'],
-            'the tip sentinel' => ['$'],
         ];
     }
 

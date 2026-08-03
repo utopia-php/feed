@@ -171,8 +171,15 @@ fails with a 4xx `Transport` error rather than silently replaying the backlog.
   retained event (or the tip, for a `Consumer::START_TIP` consumer).
 - `seek($eventId)` — treat `$eventId` as the last event handled; the next run
   starts strictly *after* it. Persisted immediately; a store failure surfaces
-  as `Transport`. The id must be well formed but need not still exist in the
-  feed.
+  as `Transport`. The id need not still exist in the feed.
+
+What counts as a usable id is the feed's to say. On a local store — which mints
+`{ms}-{seq}` positions and pages by decoding them — anything else is rejected
+as `Invalid`. On a feed read over HTTP the producer is the authority, so any
+non-empty id is accepted: http-feeds endpoints commonly use UUIDs, and refusing
+one would take the escape hatch below away from precisely the consumers that
+have no way around it. Both refuse the tip sentinel `$`, which stands for a
+start rather than a position.
 
 Either is safe to call from inside a handler: a run that finishes after the
 move keeps its own progress to itself rather than saving over the newer
