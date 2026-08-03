@@ -9,12 +9,101 @@ use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Cursor\Redis as RedisCursor;
+use Utopia\Feed\Appendable;
 use Utopia\Feed\Exception\Transport;
+use Utopia\Feed\Producer;
+use Utopia\Feed\Store;
 use Utopia\Tests\Support\UsesRedis;
 
 class RedisTest extends Base
 {
     use UsesRedis;
+
+    /**
+     * A feed on a real Redis stream, and a producer over it.
+     *
+     * The shared scenarios run against a memory feed on purpose — a failure
+     * there is the consuming side's, not a store's. But that leaves the
+     * consumer's paging arithmetic (`Id::after`, strictly-after reads, the
+     * batch loop) exercised only against ids this library mints itself, never
+     * against the ones `XADD` assigns or the approximate trimming `XRANGE`
+     * reads back. The scenarios below fill exactly that gap and no more.
+     *
+     * @return array{Store&Appendable, Producer}
+     */
+    private function stream(): array
+    {
+        $store = $this->store($this->name);
+
+        return [$store, new Producer($store, 'urn:test')];
+    }
+
+    public function testConsumesAStreamThroughAPersistedCursor(): void
+    {
+        [$store, $producer] = $this->stream();
+
+        $producer->produce('a');
+        $last = $producer->produce('b');
+
+        $this->assertSame(['a', 'b'], $this->drain($this->consumer(store: $store)));
+        $this->assertSame($last, $this->cursor->load($this->name, 'invalidator'));
+
+        $producer->produce('c');
+
+        // A fresh Consumer over the same cursor store: a restart.
+        $this->assertSame(['c'], $this->drain($this->consumer(store: $store)), 'Resumes without replaying');
+    }
+
+    /**
+     * `XADD` assigns ids within one millisecond by bumping the sequence, so a
+     * batch boundary regularly falls between two ids sharing a timestamp —
+     * which is the case paging by string comparison would get wrong.
+     */
+    public function testPagesAStreamInBatchesWithoutSkippingOrRepeating(): void
+    {
+        [$store, $producer] = $this->stream();
+
+        foreach (\range(1, 10) as $i) {
+            $producer->produce('event-' . $i);
+        }
+
+        $consumer = $this->consumer(batch: 3, store: $store);
+
+        $seen = [];
+        foreach (\range(1, 4) as $ignored) {
+            $seen = [...$seen, ...$this->drain($consumer)];
+        }
+
+        $this->assertSame(\array_map(static fn (int $i): string => 'event-' . $i, \range(1, 10)), $seen);
+        $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null), 'And then it is caught up');
+    }
+
+    public function testASecondConsumerOfTheSameStreamGetsItsOwnPosition(): void
+    {
+        [$store, $producer] = $this->stream();
+
+        $producer->produce('a');
+
+        $this->assertSame(['a'], $this->drain($this->consumer('one', store: $store)));
+        $this->assertSame(['a'], $this->drain($this->consumer('two', store: $store)), 'The second reads it too');
+        $this->assertSame([], $this->drain($this->consumer('one', store: $store)), 'The first stays caught up');
+    }
+
+    public function testResetReplaysWhatTheStreamStillRetains(): void
+    {
+        [$store, $producer] = $this->stream();
+
+        $producer->produce('a');
+        $producer->produce('b');
+
+        $consumer = $this->consumer(store: $store);
+        $this->drain($consumer);
+
+        $consumer->reset();
+
+        $this->assertNull($this->cursor->load($this->name, 'invalidator'));
+        $this->assertSame(['a', 'b'], $this->drain($consumer));
+    }
 
     /**
      * The stored form is deliberately plain — the key is
