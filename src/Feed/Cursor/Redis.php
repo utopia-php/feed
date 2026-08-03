@@ -15,17 +15,25 @@ class Redis extends Cursor
 
     public function load(string $feed, string $consumer): ?string
     {
+        $key = $this->key($feed, $consumer);
+
         try {
+            $this->redis->clearLastError();
+
             /** @var mixed $cursor */
-            $cursor = $this->redis->get($this->key($feed, $consumer));
+            $cursor = $this->redis->get($key);
         } catch (\RedisException $error) {
-            // A key left in another format holds no readable position; the
-            // next save() overwrites it.
-            if (\str_contains($error->getMessage(), 'WRONGTYPE')) {
-                return null;
+            if (self::wrongType($error->getMessage())) {
+                return $this->loadStream($key, $consumer);
             }
 
             throw new Transport("Failed to load the {$consumer} cursor: {$error->getMessage()}", previous: $error);
+        }
+
+        // phpredis reports a refusal either by throwing or by returning
+        // `false` with the text in getLastError(); check both paths.
+        if ($cursor === false && self::wrongType($this->lastError())) {
+            return $this->loadStream($key, $consumer);
         }
 
         return \is_string($cursor) && $cursor !== '' ? $cursor : null;
@@ -47,5 +55,50 @@ class Redis extends Cursor
         } catch (\RedisException $error) {
             throw new Transport("Failed to reset the {$consumer} cursor: {$error->getMessage()}", previous: $error);
         }
+    }
+
+    /**
+     * A position kept as a one-entry stream by an earlier version, with the
+     * position as the entry's id. The next {@see save()} converts the key.
+     *
+     * @throws Transport When the key holds neither a string nor a stream.
+     */
+    private function loadStream(string $key, string $consumer): ?string
+    {
+        try {
+            $this->redis->clearLastError();
+
+            $entries = $this->redis->xRevRange($key, '+', '-', 1);
+        } catch (\RedisException $error) {
+            throw new Transport("Failed to load the {$consumer} cursor: {$error->getMessage()}", previous: $error);
+        }
+
+        if ($entries === false) {
+            throw new Transport("Failed to load the {$consumer} cursor: " . ($this->lastError() ?: 'Redis command failed'));
+        }
+
+        if (!\is_array($entries) || $entries === []) {
+            return null;
+        }
+
+        // The position is the entry's id, not its payload.
+        $id = \array_key_first($entries);
+
+        return \is_string($id) && $id !== '' ? $id : null;
+    }
+
+    /** The last command's error text, cleared on the way out. */
+    private function lastError(): string
+    {
+        $error = $this->redis->getLastError();
+        $this->redis->clearLastError();
+
+        return \is_string($error) ? $error : '';
+    }
+
+    /** Whether Redis refused because the key holds another type. */
+    private static function wrongType(string $error): bool
+    {
+        return \str_contains($error, 'WRONGTYPE');
     }
 }

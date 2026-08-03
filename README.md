@@ -237,7 +237,10 @@ drains the backlog instead of dropping it.
 **One process per consumer name.** Two processes sharing a name share one
 position, so the feed is split between them rather than delivered to both —
 and because each save is last-writer-wins, the shared position can also move
-backwards and replay. Give every consumer its own name.
+backwards and replay. The same goes for moving a position by hand: a `reset()`
+or `seek()` made while another process with the same name is mid-run can be
+saved over when that run finishes, so stop the other process first. Give every
+consumer its own name.
 
 ## Reference
 

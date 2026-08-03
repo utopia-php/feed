@@ -11,16 +11,16 @@ class RedisTest extends Base
 {
     use UsesRedis;
 
-    /** A key left in another format is no position, not a permanent failure. */
-    public function testAKeyOfAnotherTypeLoadsAsNoPosition(): void
+    /** An earlier version kept cursors as one-entry streams, with the position as the entry's id. */
+    public function testAPositionRetainedAsAStreamStillLoads(): void
     {
-        $this->redis()->xAdd(Key::cursor($this->name, 'invalidator'), '1-0', ['p' => '1']);
+        $this->redis()->xAdd(Key::cursor($this->name, 'invalidator'), '1690000000000-7', ['p' => '1']);
 
-        $this->assertNull($this->cursor->load($this->name, 'invalidator'));
+        $this->assertSame('1690000000000-7', $this->cursor->load($this->name, 'invalidator'));
     }
 
-    /** The first save overwrites a key of any type, converting it in place. */
-    public function testSavingOverAKeyOfAnotherTypeConvertsIt(): void
+    /** The first save after the upgrade converts the key to a string in place. */
+    public function testSavingOverAStreamPositionConvertsTheKey(): void
     {
         $key = Key::cursor($this->name, 'invalidator');
         $this->redis()->xAdd($key, '1-0', ['p' => '1']);
@@ -29,5 +29,14 @@ class RedisTest extends Base
 
         $this->assertSame(\Redis::REDIS_STRING, $this->redis()->type($key));
         $this->assertSame('2-0', $this->cursor->load($this->name, 'invalidator'));
+    }
+
+    public function testResetForgetsAPositionRetainedAsAStream(): void
+    {
+        $this->redis()->xAdd(Key::cursor($this->name, 'invalidator'), '1-0', ['p' => '1']);
+
+        $this->cursor->reset($this->name, 'invalidator');
+
+        $this->assertNull($this->cursor->load($this->name, 'invalidator'));
     }
 }
