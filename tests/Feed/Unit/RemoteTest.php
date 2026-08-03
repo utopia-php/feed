@@ -374,6 +374,50 @@ class RemoteTest extends TestCase
     }
 
     /**
+     * Every context attribute this library models has to come off the wire,
+     * not only the ones a consumer happens to look at. An attribute silently
+     * dropped in decoding is the same class of bug as one dropped in storing,
+     * and neither shows up in a test that asserts on `id` and `data` alone.
+     */
+    public function testEveryModelledAttributeComesOffTheWire(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([self::raw('1-0', 'io.appwrite.edge.invalidate-rule', [
+            'subject' => 'example.com',
+            'time' => '2026-07-31T09:15:02.123Z',
+            'datacontenttype' => 'application/xml',
+            'dataschema' => 'https://example.com/schema.json',
+            'data' => '<invalidate/>',
+            'traceparent' => '00-abc-def-01',
+        ])])]);
+
+        $event = $remote->read()[0];
+
+        $this->assertSame('1-0', $event->id);
+        $this->assertSame('io.appwrite.edge.invalidate-rule', $event->type);
+        $this->assertSame('urn:test', $event->source);
+        $this->assertSame('1.0', $event->specversion);
+        $this->assertSame('example.com', $event->subject);
+        $this->assertSame('2026-07-31T09:15:02.123Z', $event->time);
+        $this->assertSame('application/xml', $event->datacontenttype);
+        $this->assertSame('https://example.com/schema.json', $event->dataschema);
+        $this->assertSame('<invalidate/>', $event->data);
+        $this->assertSame('00-abc-def-01', $event->extensions['traceparent']);
+    }
+
+    /**
+     * CloudEvents reads an absent `datacontenttype` as "the data is JSON", so
+     * a feed that does not send one must decode without inventing it — the
+     * attribute stays unset rather than becoming a value the producer never
+     * claimed.
+     */
+    public function testAnAbsentDatacontenttypeIsNotInvented(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([self::raw('1-0', 'a')])]);
+
+        $this->assertNull($remote->read()[0]->datacontenttype);
+    }
+
+    /**
      * The forward-compatibility property a feed depends on: it is read by
      * consumers older than the producer by design, so a producer that adds an
      * attribute or moves the spec version forward must not stop one that

@@ -67,6 +67,7 @@ abstract class Base extends TestCase
         $this->assertSame('urn:test', $events[0]->source);
         $this->assertSame(['tags' => ['domain' => 'example.com']], $events[0]->data);
         $this->assertNotNull($events[0]->time);
+        $this->assertSame('application/json', $events[0]->datacontenttype, 'produce() encodes its payload as JSON and says so');
     }
 
     public function testStampsTheSourceAndTime(): void
