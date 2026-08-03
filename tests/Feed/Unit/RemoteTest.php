@@ -288,6 +288,20 @@ class RemoteTest extends TestCase
     }
 
     /**
+     * The empty object is the one non-batch json_decode() cannot expose: `{}`
+     * and `[]` both decode to the same empty array, and only one of them
+     * means "caught up".
+     */
+    public function testAnEmptyObjectIsNotMistakenForBeingCaughtUp(): void
+    {
+        [$remote] = $this->remote([FakeTransport::raw('{}')]);
+
+        $this->expectException(Invalid::class);
+
+        $remote->read();
+    }
+
+    /**
      * @return array<string, array{array<array-key, mixed>}>
      */
     public static function notBatches(): array

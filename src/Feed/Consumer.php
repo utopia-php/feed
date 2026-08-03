@@ -90,8 +90,17 @@ class Consumer
         }
 
         if ($processed !== null && $this->moved === $moved) {
+            $expected = $this->position;
             $this->position = $processed;
-            $this->cursor->save($this->feed->getName(), $this->name, $processed);
+
+            // Conditional for the same reason as the $moved guard, but across
+            // instances: a save lands only if the position is still where this
+            // run started. Refused means another instance moved it — progress,
+            // a seek, or a reset — and that newer decision stands.
+            if (!$this->cursor->advance($this->feed->getName(), $this->name, $processed, $expected)) {
+                $this->position = null;
+                $this->restored = false;
+            }
         }
 
         if ($failure !== null) {

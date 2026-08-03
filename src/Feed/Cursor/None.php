@@ -25,4 +25,12 @@ class None extends Cursor
     {
         $this->key($feed, $consumer);
     }
+
+    /** Nothing is stored, so nothing can conflict: the caller's own memory is the only record. */
+    public function advance(string $feed, string $consumer, string $eventId, ?string $expected): bool
+    {
+        $this->key($feed, $consumer);
+
+        return true;
+    }
 }

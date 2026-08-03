@@ -95,10 +95,19 @@ class Remote implements Readable
             );
         }
 
+        $raw = (string) $response->getBody();
+
         try {
-            $body = \json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+            $body = \json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
         } catch (\JsonException $error) {
             throw new Transport("The {$this->name} feed returned a body that is not JSON: {$error->getMessage()}", previous: $error);
+        }
+
+        // json_decode collapses `{}` and `[]` into the same empty array, and
+        // only one of them is a batch: an empty object is a non-feed answering,
+        // not "caught up".
+        if ($body === [] && !\str_starts_with(\ltrim($raw), '[')) {
+            throw new Invalid('Expected a feed batch, got an object');
         }
 
         return self::decode($body);

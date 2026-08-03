@@ -34,4 +34,9 @@ class Pool extends Cursor
             (new Redis($redis))->reset($feed, $consumer);
         });
     }
+
+    public function advance(string $feed, string $consumer, string $eventId, ?string $expected): bool
+    {
+        return $this->pool->use(fn (\Redis|\RedisCluster $redis): bool => (new Redis($redis))->advance($feed, $consumer, $eventId, $expected));
+    }
 }

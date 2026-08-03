@@ -9,6 +9,11 @@ use Utopia\Feed\Exception\Transport;
 
 class Redis extends Cursor
 {
+    // advance() is inherited: its load() already reads a legacy stream key,
+    // and its save() converts one. Redis' own compare-and-set (WATCH/MULTI)
+    // is not used on purpose — this client is shared with the producer's
+    // store, and WATCH state does not survive a shared connection.
+
     public function __construct(protected readonly \Redis|\RedisCluster $redis)
     {
     }

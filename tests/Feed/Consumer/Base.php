@@ -599,15 +599,16 @@ abstract class Base extends TestCase
     }
 
     /**
-     * And the cost of sharing a name, which no amount of coordination inside a
-     * single process can remove: each save is last-writer-wins, so a replica
-     * holding an older position drags the shared one backwards when it saves.
-     * At-least-once makes that a replay rather than a loss — but it is why
-     * every consumer gets its own name.
+     * And what sharing a name costs: a replica holding an older position
+     * re-handles events it polls (at-least-once), but its save is conditional
+     * on the position its run started from, so it cannot drag the shared
+     * position backwards — it concedes to the replica that got ahead. Every
+     * consumer still gets its own name; the fence bounds the damage, it does
+     * not split the feed cleanly.
      */
-    public function testAStaleConsumerSharingANameDragsThePositionBackwards(): void
+    public function testAStaleConsumerSharingANameCannotDragThePositionBackwards(): void
     {
-        $first = $this->producer->produce('a');
+        $this->producer->produce('a');
         $second = $this->producer->produce('b');
 
         $stale = $this->consumer(batch: 1);
@@ -617,8 +618,8 @@ abstract class Base extends TestCase
         $this->assertSame(['a', 'b'], $this->drain($ahead));
         $this->assertSame($second, $this->cursor->load($this->name, 'invalidator'));
 
-        $this->assertSame(['a'], $this->drain($stale), 'The stale replica polls from where it thought it was');
-        $this->assertSame($first, $this->cursor->load($this->name, 'invalidator'), 'Its save wins, so the shared position regresses');
+        $this->assertSame(['a'], $this->drain($stale), 'The stale replica re-handles from where it thought it was');
+        $this->assertSame($second, $this->cursor->load($this->name, 'invalidator'), 'Its save is refused, so the shared position holds');
     }
 
     public function testPositionIsNullBeforeTheFirstRun(): void

@@ -62,14 +62,71 @@ class ConsumerTest extends TestCase
 
         $consumer = $this->consumer($cursor);
 
-        // One read on the first pass to restore the position; the two
-        // caught-up polls after it must not touch the store at all, which is
-        // what keeps an idle consumer on a timer free.
+        // Two reads on the first pass — one restores the position, one is the
+        // conditional save's compare. The caught-up polls after it must not
+        // touch the store at all, which is what keeps an idle consumer on a
+        // timer free.
         $consumer->consume(fn (CloudEvent $event) => null);
+        $this->assertSame(2, $cursor->loads);
+
         $consumer->consume(fn (CloudEvent $event) => null);
         $consumer->consume(fn (CloudEvent $event) => null);
 
-        $this->assertSame(1, $cursor->loads);
+        $this->assertSame(2, $cursor->loads, 'An idle poll costs no cursor reads');
+    }
+
+    /**
+     * Two instances sharing a name share one position. A save is conditional
+     * on the position the run started from, so the instance that fell behind
+     * cannot undo the other's progress — it adopts the newer position and
+     * continues from there.
+     */
+    public function testAStaleInstanceCannotUndoAnotherInstancesProgress(): void
+    {
+        $one = $this->consumer();
+        $two = $this->consumer();
+
+        // An empty first run restores "no position yet" on both instances...
+        $this->assertSame(0, $one->consume(fn (CloudEvent $event) => null));
+        $this->assertSame(0, $two->consume(fn (CloudEvent $event) => null));
+
+        foreach (['a', 'b', 'c', 'd'] as $type) {
+            $this->producer->produce($type);
+        }
+
+        // ...then the first instance gets ahead.
+        $one->consume(fn (CloudEvent $event) => null);
+        $ahead = $one->position();
+        $this->assertNotNull($ahead);
+
+        // The stale instance re-handles from the start (at-least-once), but
+        // its save is refused rather than moving the shared position back.
+        $two->consume(fn (CloudEvent $event) => null);
+        $this->assertSame($ahead, $this->cursor->load('edge', 'invalidator'));
+
+        // Having conceded, it reloads the shared position and stays there.
+        $this->assertSame($ahead, $two->position());
+    }
+
+    /** A seek made through one instance survives another instance's in-flight run. */
+    public function testAStaleInstanceCannotUndoAnotherInstancesSeek(): void
+    {
+        $running = $this->consumer();
+        $operator = $this->consumer();
+
+        // An empty first run restores "no position yet" before the seek lands.
+        $this->assertSame(0, $running->consume(fn (CloudEvent $event) => null));
+
+        foreach (['a', 'b'] as $type) {
+            $this->producer->produce($type);
+        }
+
+        $operator->seek('9999999999999-0');
+
+        $running->consume(fn (CloudEvent $event) => null);
+
+        $this->assertSame('9999999999999-0', $this->cursor->load('edge', 'invalidator'));
+        $this->assertSame('9999999999999-0', $running->position(), 'The refused instance adopts the seek');
     }
 
     /**

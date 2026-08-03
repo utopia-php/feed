@@ -31,6 +31,19 @@ class RedisTest extends Base
         $this->assertSame('2-0', $this->cursor->load($this->name, 'invalidator'));
     }
 
+    /** advance() compares against a legacy stream position, and a landing one converts the key. */
+    public function testAdvanceOverAStreamPositionComparesAndConverts(): void
+    {
+        $key = Key::cursor($this->name, 'invalidator');
+        $this->redis()->xAdd($key, '1-0', ['p' => '1']);
+
+        $this->assertFalse($this->cursor->advance($this->name, 'invalidator', '9-0', '0-5'), 'A stale expectation is refused against a stream too');
+
+        $this->assertTrue($this->cursor->advance($this->name, 'invalidator', '2-0', '1-0'));
+        $this->assertSame(\Redis::REDIS_STRING, $this->redis()->type($key));
+        $this->assertSame('2-0', $this->cursor->load($this->name, 'invalidator'));
+    }
+
     public function testResetForgetsAPositionRetainedAsAStream(): void
     {
         $this->redis()->xAdd(Key::cursor($this->name, 'invalidator'), '1-0', ['p' => '1']);

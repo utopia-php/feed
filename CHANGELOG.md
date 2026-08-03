@@ -70,7 +70,10 @@ pooled adapters.
   — where a consumer's position lives, keyed by feed and consumer name. The
   stored form is deliberately plain (`feed:<feed>:cursor:<consumer>` holding
   the id as a string), so positions carry across upgrades and an operator can
-  answer "where is this consumer?" from a shell.
+  answer "where is this consumer?" from a shell. A run's save is conditional
+  on the position it started from (read-compare-write), so an instance that
+  fell behind cannot undo newer progress, a seek, or a reset — it adopts the
+  newer position instead.
 - Retention (`maxSize`) and the long-poll read interval (`pollInterval`, in
   milliseconds, default 500) are constructor options on every store.
 

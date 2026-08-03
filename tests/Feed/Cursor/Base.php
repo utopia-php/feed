@@ -108,6 +108,34 @@ abstract class Base extends TestCase
         $this->assertSame('2-0', $this->cursor->load($this->name, 'two'), 'The other consumer is untouched');
     }
 
+    public function testAdvanceLandsWhileThePositionIsUnmoved(): void
+    {
+        $this->assertTrue($this->cursor->advance($this->name, 'invalidator', '1-0', null));
+        $this->assertSame('1-0', $this->cursor->load($this->name, 'invalidator'));
+
+        $this->assertTrue($this->cursor->advance($this->name, 'invalidator', '2-0', '1-0'));
+        $this->assertSame('2-0', $this->cursor->load($this->name, 'invalidator'));
+    }
+
+    /** A save conditioned on a position that has since moved is refused: the newer decision stands. */
+    public function testAdvanceIsRefusedWhenThePositionHasMoved(): void
+    {
+        $this->cursor->save($this->name, 'invalidator', '5-0');
+
+        $this->assertFalse($this->cursor->advance($this->name, 'invalidator', '3-0', '2-0'));
+        $this->assertFalse($this->cursor->advance($this->name, 'invalidator', '3-0', null), 'A run that started from nothing concedes too');
+        $this->assertSame('5-0', $this->cursor->load($this->name, 'invalidator'));
+    }
+
+    public function testAdvanceIsRefusedAfterAReset(): void
+    {
+        $this->cursor->save($this->name, 'invalidator', '5-0');
+        $this->cursor->reset($this->name, 'invalidator');
+
+        $this->assertFalse($this->cursor->advance($this->name, 'invalidator', '6-0', '5-0'));
+        $this->assertNull($this->cursor->load($this->name, 'invalidator'));
+    }
+
     /**
      * Refused by every operation, not just the first one a caller reaches —
      * which is what says the adapter goes through the shared key builder.
@@ -136,6 +164,9 @@ abstract class Base extends TestCase
             },
             'reset' => static function (Cursor $cursor, string $feed, string $consumer): void {
                 $cursor->reset($feed, $consumer);
+            },
+            'advance' => static function (Cursor $cursor, string $feed, string $consumer): void {
+                $cursor->advance($feed, $consumer, '1-0', null);
             },
         ];
 

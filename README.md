@@ -194,7 +194,9 @@ start rather than a position.
 
 Either is safe to call from inside a handler: a run that finishes after the
 move keeps its own progress to itself rather than saving over the newer
-decision.
+decision. The same holds across processes — a run's save lands only if the
+position is still where that run started, so a move made through another
+instance stands, and the instance whose save was refused adopts it.
 
 `seek()` is the escape hatch for a poison event. A handler that keeps failing
 blocks the feed by design, so stepping past it is a decision made in code:
@@ -235,12 +237,13 @@ consumer opted into `Consumer::START_TIP`), so a consumer deployed after the pro
 drains the backlog instead of dropping it.
 
 **One process per consumer name.** Two processes sharing a name share one
-position, so the feed is split between them rather than delivered to both —
-and because each save is last-writer-wins, the shared position can also move
-backwards and replay. The same goes for moving a position by hand: a `reset()`
-or `seek()` made while another process with the same name is mid-run can be
-saved over when that run finishes, so stop the other process first. Give every
-consumer its own name.
+position, so the feed is split between them rather than delivered to both.
+The position itself holds: a save is conditional on where its run started, so
+a process that fell behind cannot undo the other's progress, a `seek()`, or a
+`reset()` — it adopts the newer position and continues. The check is
+read-compare-write rather than atomic, so a race that lands inside one round
+trip can still replay a batch: duplicates, which handlers absorb by the first
+rule, never a gap. Give every consumer its own name.
 
 ## Reference
 
@@ -285,6 +288,14 @@ and the value is the event id as a string. That is the format consumers have
 always written, so positions carry across an upgrade instead of replaying the
 retained feed, and `GET feed:edge:cursor:notifier` answers "where is this
 consumer?" from a shell.
+
+A consumer's save is conditional — it lands only if the stored position is
+still the one its run started from ([`Cursor::advance()`](src/Feed/Cursor.php)),
+so a stale instance concedes to a newer save, seek, or reset instead of
+undoing it. The check is read-compare-write on every adapter, deliberately:
+it needs nothing more than `load()` and `save()`, works on ids with no order,
+and narrows a lost update to a single round trip, which at-least-once
+delivery absorbs.
 
 | Cursor | Use for |
 | --- | --- |
