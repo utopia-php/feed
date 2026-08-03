@@ -304,17 +304,22 @@ class RemoteTest extends TestCase
     /**
      * One event as a producer would put it on the wire.
      *
-     * @param array<string, mixed> $overrides
-     * @return array<string, mixed>
+     * Overrides win, and are unioned rather than merged: a digits-only
+     * extension name is legal per the spec and an integer key in PHP, which
+     * `array_merge()` would silently renumber — losing the attribute inside
+     * the fixture, before the code under test ever saw it.
+     *
+     * @param array<array-key, mixed> $overrides
+     * @return array<array-key, mixed>
      */
     private static function raw(string $id, string $type, array $overrides = []): array
     {
-        return \array_merge([
+        return $overrides + [
             'specversion' => '1.0',
             'id' => $id,
             'type' => $type,
             'source' => 'urn:test',
-        ], $overrides);
+        ];
     }
 
     /**
@@ -442,6 +447,68 @@ class RemoteTest extends TestCase
         $this->assertCount(1, $events);
         $this->assertSame('1.1', $events[0]->specversion);
         $this->assertSame('00-abc-def-01', $events[0]->extensions['traceparent']);
+    }
+
+    /**
+     * The spec is narrow about extensions — a name of lowercase letters and
+     * digits, a value that is a boolean, an integer or a string — and a feed
+     * is read by consumers older than its producer by design. So an attribute
+     * outside that is dropped and the event still delivered, rather than one
+     * odd attribute costing the whole event and everything behind it.
+     *
+     * Dropping is a choice, not an accident, which is why each shape it can
+     * take is named here.
+     *
+     * @param array<string, mixed> $extension
+     */
+    #[DataProvider('unusableExtensions')]
+    public function testAnExtensionTheSpecCannotCarryIsDroppedAndTheEventKept(array $extension): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([
+            self::raw('1-0', 'a', $extension + ['keeps' => 'this one']),
+        ])]);
+
+        $events = $remote->read();
+
+        $this->assertCount(1, $events, 'The event is still delivered');
+        $this->assertSame(['keeps' => 'this one'], $events[0]->extensions);
+    }
+
+    /**
+     * @return array<string, array{array<string, mixed>}>
+     */
+    public static function unusableExtensions(): array
+    {
+        return [
+            // A JSON number with a decimal point decodes as a float.
+            'a float value' => [['ratio' => 1.5]],
+            'an array value' => [['tags' => ['a', 'b']]],
+            'an object value' => [['nested' => ['a' => 'b']]],
+            'a null value' => [['missing' => null]],
+            'an uppercase name' => [['traceParent' => '00-abc-def-01']],
+            'a name with a dash' => [['trace-parent' => '00-abc-def-01']],
+            'a name with an underscore' => [['trace_parent' => '00-abc-def-01']],
+        ];
+    }
+
+    /**
+     * The types the spec does allow, including a digits-only name — legal per
+     * the spec, and an integer key in PHP, which anything merging with
+     * `array_merge()` would silently renumber.
+     */
+    public function testEveryExtensionTheSpecAllowsIsKept(): void
+    {
+        [$remote] = $this->remote([FakeTransport::json([
+            self::raw('1-0', 'a', ['trace' => 'abc', 'retrycount' => 2, 'replayed' => true, '123' => 'digits']),
+        ])]);
+
+        $extensions = $remote->read()[0]->extensions;
+
+        $this->assertSame('abc', $extensions['trace']);
+        $this->assertSame(2, $extensions['retrycount']);
+        $this->assertTrue($extensions['replayed']);
+        // @phpstan-ignore offsetAccess.notFound ('123' is an integer key in PHP)
+        $this->assertSame('digits', $extensions['123']);
     }
 
     /**

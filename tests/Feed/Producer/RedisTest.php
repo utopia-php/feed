@@ -64,6 +64,40 @@ class RedisTest extends Base
     }
 
     /**
+     * A stream is a shared, writable thing: another tool can `XADD` into a
+     * feed, and this library's own producer cannot be the only writer assumed.
+     * An entry carrying an attribute a CloudEvent cannot hold must therefore
+     * decode without it, exactly as the same event would arriving over HTTP.
+     *
+     * The failure this prevents is the worst shape a feed has: a read decodes
+     * every entry in the batch, so one poisoned entry would fail every read
+     * past it — permanently, for every consumer, until it fell off the trim
+     * horizon.
+     */
+    public function testAForeignWritersUnusableExtensionIsDroppedRatherThanWedgingTheFeed(): void
+    {
+        $this->producer->produce('a');
+
+        $this->redis()->xAdd(Key::feed($this->name), '*', [
+            'type' => 'foreign',
+            'source' => 'urn:somebody:else',
+            'subject' => '',
+            'datacontenttype' => '',
+            'dataschema' => '',
+            'time' => '',
+            'data' => '{"ok":true}',
+            'extensions' => '{"ratio":1.5,"trace":"abc"}',
+        ]);
+
+        $this->producer->produce('c');
+
+        $events = $this->store->read(null, 10);
+
+        $this->assertSame(['a', 'foreign', 'c'], \array_map(fn (CloudEvent $e): string => $e->type, $events), 'Nothing behind it is lost');
+        $this->assertSame(['trace' => 'abc'], $events[1]->extensions, 'Only the attribute it could not hold is gone');
+    }
+
+    /**
      * The README promises `Transport` when "the backend or network failed:
      * Redis errors, HTTP failures". The HTTP half of that promise is tested
      * thoroughly; the Redis half — the flagship production adapter — was not

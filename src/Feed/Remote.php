@@ -33,19 +33,6 @@ class Remote implements Readable
      */
     private const int TIMEOUT_MARGIN = 10_000;
 
-    /** The context attributes this library models; the rest are extensions. */
-    private const array ATTRIBUTES = [
-        'specversion',
-        'type',
-        'source',
-        'id',
-        'subject',
-        'time',
-        'datacontenttype',
-        'dataschema',
-        'data',
-    ];
-
     private readonly RequestFactory $requests;
 
     public function __construct(
@@ -190,19 +177,7 @@ class Remote implements Readable
             }
         }
 
-        $extensions = [];
-
-        /** @var mixed $value */
-        foreach ($raw as $name => $value) {
-            if (\in_array($name, self::ATTRIBUTES, true)) {
-                continue;
-            }
-
-            if (\preg_match('/^[a-z0-9]+$/', (string) $name) === 1
-                && (\is_bool($value) || \is_int($value) || \is_string($value))) {
-                $extensions[$name] = $value;
-            }
-        }
+        $extensions = Extensions::filter($raw);
 
         return new CloudEvent(
             type: $raw['type'],

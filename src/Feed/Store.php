@@ -120,7 +120,11 @@ abstract class Store implements Readable
             }
         }
 
-        $event += \is_array($extensions) ? $extensions : [];
+        // Filtered rather than merged verbatim, and for the same reason the
+        // wire path filters: a read decodes every entry in the batch, so one
+        // entry a foreign writer left an unusable attribute on would otherwise
+        // fail every read past it, permanently, for every consumer.
+        $event += Extensions::filter(\is_array($extensions) ? $extensions : []);
 
         try {
             // The docblock wants array<string, mixed>, but a digit-only
