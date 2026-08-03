@@ -82,4 +82,56 @@ class BatchTest extends TestCase
         $this->assertSame('1.0', $payload[0]['specversion']);
         $this->assertSame([], (new Batch([], 100))->toArray());
     }
+
+    /**
+     * Everything an event carries has to reach the wire, not only what a
+     * consumer of this suite happens to look at. Asserting `id` and
+     * `specversion` alone would pass an encoder that dropped `subject` or an
+     * extension — and on the wire is the one place a dropped attribute cannot
+     * be recovered from.
+     */
+    public function testEveryAttributeReachesTheWire(): void
+    {
+        $batch = new Batch([new CloudEvent(
+            id: '1-0',
+            type: 'io.appwrite.edge.invalidate-rule',
+            source: 'urn:appwrite:cloud:fra',
+            subject: 'example.com',
+            time: '2026-07-31T09:15:02.123Z',
+            datacontenttype: 'application/json',
+            data: ['tags' => ['domain' => 'example.com']],
+            dataschema: 'https://example.com/schema.json',
+            extensions: ['traceparent' => '00-abc-def-01'],
+        )], 100);
+
+        $this->assertSame([
+            'specversion' => '1.0',
+            'type' => 'io.appwrite.edge.invalidate-rule',
+            'source' => 'urn:appwrite:cloud:fra',
+            'id' => '1-0',
+            'subject' => 'example.com',
+            'time' => '2026-07-31T09:15:02.123Z',
+            'datacontenttype' => 'application/json',
+            'dataschema' => 'https://example.com/schema.json',
+            'data' => ['tags' => ['domain' => 'example.com']],
+            'traceparent' => '00-abc-def-01',
+        ], $batch->toArray()[0]);
+    }
+
+    /**
+     * The spec has no null attribute values, so an absent optional attribute
+     * is omitted rather than sent as null — a consumer must be able to tell
+     * "not set" from "set to nothing".
+     */
+    public function testAnAbsentOptionalAttributeIsOmittedRatherThanNulled(): void
+    {
+        $encoded = (new Batch([new CloudEvent(
+            id: '1-0',
+            type: 'a',
+            source: 'urn:test',
+            datacontenttype: null,
+        )], 100))->toArray()[0];
+
+        $this->assertSame(['specversion', 'type', 'source', 'id'], \array_keys($encoded));
+    }
 }

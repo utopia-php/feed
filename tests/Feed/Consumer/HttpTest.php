@@ -119,6 +119,50 @@ class HttpTest extends Base
         $this->assertSame(Remote::MEDIA_TYPE, $request['contentType'], 'The producer answers with what the consumer asked for');
     }
 
+    /**
+     * One event through the real wire code in both directions — `Batch`
+     * encoding it in the endpoint, `Remote` decoding it on the way back —
+     * with every attribute asserted on the far side.
+     *
+     * The shared consumer scenarios record only `type`, and the producer and
+     * server suites round-trip the rest through the *store*. So an encoder or
+     * decoder that dropped `subject`, `source`, `dataschema` or an extension
+     * on the wire specifically would pass everything else in the suite.
+     */
+    public function testAnEventSurvivesTheWireWithEveryAttribute(): void
+    {
+        $id = $this->producer->publish(new CloudEvent(
+            id: '',
+            type: 'io.appwrite.edge.invalidate-rule',
+            source: 'ignored, the producer stamps its own',
+            subject: 'example.com',
+            time: '2026-07-31T09:15:02.123Z',
+            datacontenttype: 'application/json',
+            data: ['tags' => ['domain' => 'example.com'], 'depth' => [1, 2, 3]],
+            dataschema: 'https://example.com/schema.json',
+            extensions: ['traceparent' => '00-abc-def-01', 'retrycount' => 2, 'replayed' => true],
+        ));
+
+        $received = null;
+        $this->consumer()->consume(function (CloudEvent $event) use (&$received): void {
+            $received = $event;
+        });
+
+        $this->assertInstanceOf(CloudEvent::class, $received);
+        $this->assertSame($id, $received->id);
+        $this->assertSame('1.0', $received->specversion);
+        $this->assertSame('io.appwrite.edge.invalidate-rule', $received->type);
+        $this->assertSame('urn:test', $received->source);
+        $this->assertSame('example.com', $received->subject);
+        $this->assertSame('2026-07-31T09:15:02.123Z', $received->time);
+        $this->assertSame('application/json', $received->datacontenttype);
+        $this->assertSame('https://example.com/schema.json', $received->dataschema);
+        $this->assertSame(['tags' => ['domain' => 'example.com'], 'depth' => [1, 2, 3]], $received->data);
+        $this->assertSame('00-abc-def-01', $received->extensions['traceparent']);
+        $this->assertSame(2, $received->extensions['retrycount']);
+        $this->assertTrue($received->extensions['replayed']);
+    }
+
     public function testTheProducerCachesFullBatchesAndNothingElse(): void
     {
         foreach (\range(1, 5) as $i) {
