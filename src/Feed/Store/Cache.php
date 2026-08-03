@@ -8,12 +8,24 @@ use Utopia\Cache\Cache as UtopiaCache;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Id;
+use Utopia\Feed\Key;
 use Utopia\Feed\Appendable;
 use Utopia\Feed\Store;
 
 class Cache extends Store implements Appendable
 {
     public const int TTL = 30 * 24 * 60 * 60; // 30 days
+
+    /**
+     * Deliberately far below the {@see Store::MAX_SIZE} the Redis store
+     * inherits, where trimming happens server-side and reads are ranged.
+     * Here the whole feed lives under one key, so retention is also the size
+     * of every append's read-modify-write: at 100 000 entries a single
+     * `produce()` moves megabytes through the cache both ways. A larger cap
+     * is a fine choice for a low-rate feed, but it should be one somebody
+     * made rather than one inherited from a backend with other costs.
+     */
+    protected const int MAX_SIZE = 1_000; // entries
 
     public function __construct(
         protected readonly UtopiaCache $cache,
@@ -41,8 +53,24 @@ class Cache extends Store implements Appendable
             $entries = \array_slice($entries, -$this->maxSize);
         }
 
+        // The tip marker goes first, so it is never behind the feed. A crash
+        // between the two writes leaves it ahead, which only costs a read that
+        // finds nothing; behind, it would report a caught-up consumer and the
+        // event would never be delivered.
+        $this->write(Key::tip($this->name), $id);
+        $this->write($this->key(), $entries);
+
+        return $id;
+    }
+
+    /**
+     * @param string|array<int|string, mixed> $value
+     * @throws Transport When the write fails, either way a cache adapter can.
+     */
+    private function write(string $key, string|array $value): void
+    {
         try {
-            $saved = $this->cache->save($this->key(), $entries);
+            $saved = $this->cache->save($key, $value);
         } catch (\Throwable $error) {
             throw new Transport("Failed to append to the {$this->name} feed: {$error->getMessage()}", previous: $error);
         }
@@ -50,8 +78,6 @@ class Cache extends Store implements Appendable
         if ($saved === false) {
             throw new Transport("Failed to append to the {$this->name} feed");
         }
-
-        return $id;
     }
 
     public function tip(): ?string
@@ -64,6 +90,10 @@ class Cache extends Store implements Appendable
     public function read(?string $lastEventId, int $limit): array
     {
         $lastEventId = $this->resolve($lastEventId);
+
+        if ($lastEventId !== null && $this->caughtUp($lastEventId)) {
+            return [];
+        }
 
         $after = $lastEventId === null ? null : Id::decode($lastEventId);
 
@@ -82,6 +112,37 @@ class Cache extends Store implements Appendable
         }
 
         return $events;
+    }
+
+    /**
+     * Whether the feed provably holds nothing after $lastEventId, decided from
+     * the tip marker alone.
+     *
+     * The whole feed lives under one key, so answering this by reading it
+     * costs the entire retained feed — every poll tick, per waiting consumer,
+     * for up to 30 seconds a request. The marker turns the common case, a
+     * caught-up consumer waiting on a quiet feed, into one small read.
+     *
+     * Only ever used to skip work, never to invent an answer: the marker is
+     * written before the feed, so it is never behind, and a missing or
+     * unreadable one falls through to the real read.
+     *
+     * @throws Transport When the cache backend cannot be reached.
+     */
+    private function caughtUp(string $lastEventId): bool
+    {
+        try {
+            /** @var mixed $tip */
+            $tip = $this->cache->load(Key::tip($this->name), $this->ttl);
+        } catch (\Throwable $error) {
+            throw new Transport("Failed to read the {$this->name} feed: {$error->getMessage()}", previous: $error);
+        }
+
+        if (!\is_string($tip) || !Id::isValid($tip)) {
+            return false;
+        }
+
+        return Id::decode($tip) <= Id::decode($lastEventId);
     }
 
     /**

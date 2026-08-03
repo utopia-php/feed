@@ -240,6 +240,19 @@ store that retains nothing is a misconfiguration, so the constructor throws
 | `Store\Memory` | Tests and single-process development |
 | `Store\None` | No backend configured — throws on use, so a misconfigured service fails loudly instead of dropping events |
 
+`Store\Cache` keeps the whole feed under one key, which is what makes it cheap
+to adopt and what bounds how far it scales: an append is a read-modify-write of
+the entire retained feed, so retention is also the cost of producing one event.
+Its default `maxSize` is therefore 1 000 rather than the 100 000 the Redis store
+keeps, where trimming happens server-side and reads are ranged. Raising it is a
+fine choice for a low-rate feed — just a deliberate one.
+
+Long polls do not pay that cost: the newest id is kept under a second, tiny key
+(`feed:<name>:tip`), so a caught-up consumer waiting out a 30-second poll checks
+that marker each tick instead of loading the feed. The marker is written before
+the feed and is only ever used to skip a read, never to answer one, so a missing
+or stale marker costs a wasted read rather than a missed event.
+
 ### Cursors
 
 A cursor is keyed by feed and consumer name, so one store serves every feed a

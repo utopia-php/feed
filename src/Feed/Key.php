@@ -36,6 +36,15 @@ final class Key
     }
 
     /**
+     * The key a feed's newest id lives under, for backends that cannot answer
+     * "is there anything after this position?" without reading the feed.
+     */
+    public static function tip(string $name): string
+    {
+        return self::feed($name) . ':tip';
+    }
+
+    /**
      * Percent-encode the separator, and the escape character itself so the
      * encoding stays reversible. A name with neither is left exactly as it
      * was, which is what keeps the layout the README documents readable from
