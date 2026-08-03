@@ -20,18 +20,13 @@ class Cache extends Cursor
 
     public function load(string $feed, string $consumer): ?string
     {
-        // The key is shaped outside the try: an unusable name is the caller's
-        // bug (Invalid), not the backend's failure (Transport).
+        // Keyed outside the try: an unusable name is Invalid, not Transport.
         $key = $this->key($feed, $consumer);
 
         try {
             /** @var mixed $cursor */
             $cursor = $this->cache->load($key, $this->ttl);
         } catch (\Throwable $error) {
-            // A cache adapter over a backend that is down raises whatever that
-            // backend raises — a raw \RedisException, say. Every error this
-            // library reports extends Utopia\Feed\Exception, and a consumer
-            // retrying on Transport must not crash on a backend blip instead.
             throw new Transport("Failed to load the {$consumer} cursor: {$error->getMessage()}", previous: $error);
         }
 
@@ -48,10 +43,7 @@ class Cache extends Cursor
             throw new Transport("Failed to save the {$consumer} cursor: {$error->getMessage()}", previous: $error);
         }
 
-        // A cache adapter reports a failed write by returning false rather
-        // than raising — swallowing that would let a position silently not
-        // persist, so the consumer replays its backlog on the next restart
-        // and a seek past a poison event quietly does nothing.
+        // A cache reports a failed write by returning false rather than raising.
         if ($saved === false) {
             throw new Transport("Failed to save the {$consumer} cursor on the {$feed} feed");
         }
@@ -62,10 +54,8 @@ class Cache extends Cursor
         $key = $this->key($feed, $consumer);
 
         try {
-            // Unlike save(), purge()'s false is not a failure signal: it is
-            // also what an adapter answers for a key that was never there,
-            // which is the ordinary case for a consumer that has not saved a
-            // position yet. Only a raising backend is a failure to report.
+            // purge()'s false is not checked: it also means "was never there",
+            // which is the ordinary case for a consumer with no position yet.
             $this->cache->purge($key);
         } catch (\Throwable $error) {
             throw new Transport("Failed to reset the {$consumer} cursor: {$error->getMessage()}", previous: $error);

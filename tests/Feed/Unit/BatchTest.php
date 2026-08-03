@@ -84,11 +84,8 @@ class BatchTest extends TestCase
     }
 
     /**
-     * Everything an event carries has to reach the wire, not only what a
-     * consumer of this suite happens to look at. Asserting `id` and
-     * `specversion` alone would pass an encoder that dropped `subject` or an
-     * extension — and on the wire is the one place a dropped attribute cannot
-     * be recovered from.
+     * Asserted as a whole array: `id` and `specversion` alone would pass an
+     * encoder that dropped `subject` or an extension.
      */
     public function testEveryAttributeReachesTheWire(): void
     {
@@ -118,11 +115,7 @@ class BatchTest extends TestCase
         ], $batch->toArray()[0]);
     }
 
-    /**
-     * The spec has no null attribute values, so an absent optional attribute
-     * is omitted rather than sent as null — a consumer must be able to tell
-     * "not set" from "set to nothing".
-     */
+    /** The spec has no null attribute values, so an absent attribute is omitted. */
     public function testAnAbsentOptionalAttributeIsOmittedRatherThanNulled(): void
     {
         $encoded = (new Batch([new CloudEvent(

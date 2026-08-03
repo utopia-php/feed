@@ -7,11 +7,8 @@ namespace Utopia\Tests\Support;
 use Utopia\Feed\Store\Memory;
 
 /**
- * A memory feed that records what it was asked for.
- *
- * Clamping and coercion are only visible in the arguments the store receives —
- * a caller that stopped forwarding them entirely returns the same events — so
- * asserting on the answer cannot tell the two apart.
+ * A memory feed that records what it was asked for. Clamping and coercion are
+ * only visible in the arguments, never in the events that come back.
  */
 class RecordingStore extends Memory
 {

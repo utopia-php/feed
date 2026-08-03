@@ -109,11 +109,8 @@ abstract class Base extends TestCase
     }
 
     /**
-     * `source` records where an event happened, and a producer can only speak
-     * for itself — so an event relayed from another feed is republished as
-     * this service's event. Documented rather than merely tested, because a
-     * caller handing over a "prepared" event would reasonably expect it to be
-     * published as prepared.
+     * A producer can only speak for itself, so an event relayed from another
+     * feed is republished as this service's — surprising enough to pin.
      */
     public function testPublishReplacesTheCallersSourceWithTheProducersOwn(): void
     {
@@ -122,10 +119,7 @@ abstract class Base extends TestCase
         $this->assertSame('urn:test', $this->events()[0]->source);
     }
 
-    /**
-     * The stored form can only be decoded as CloudEvents 1.0, so keeping
-     * another version would leave an entry in the feed that nothing can read.
-     */
+    /** Another version would leave an entry in the feed that nothing can read. */
     public function testPublishNormalisesTheSpecVersion(): void
     {
         $this->producer->publish(new CloudEvent(id: '', type: 'test', source: '', specversion: '1.1'));
@@ -238,11 +232,8 @@ abstract class Base extends TestCase
     }
 
     /**
-     * A producer that encodes its payload as something other than JSON says so
-     * with `datacontenttype`, and losing it leaves a consumer holding data it
-     * can no longer interpret. Nothing about the flattening the store does is
-     * visible to the caller, so only a round trip can show the attribute made
-     * it through.
+     * Losing `datacontenttype` leaves a consumer holding data it can no longer
+     * interpret, and only a round trip can show the attribute made it through.
      */
     public function testDatacontenttypeSurvivesAppendAndRead(): void
     {
@@ -260,11 +251,7 @@ abstract class Base extends TestCase
         $this->assertSame('<invalidate/>', $event->data);
     }
 
-    /**
-     * CloudEvents treats an absent `datacontenttype` as meaning the data is
-     * JSON, so "unset" has to come back unset rather than as the empty string
-     * the store flattens it to.
-     */
+    /** Absent means JSON, so it must not come back as the empty string the store flattens it to. */
     public function testAnEventWithNoDatacontenttypeReadsBackWithNone(): void
     {
         $this->producer->publish(new CloudEvent(id: '', type: 'test', source: '', datacontenttype: null));
@@ -350,11 +337,7 @@ abstract class Base extends TestCase
         $this->assertSame('event-299', \end($types), 'The newest event is retained');
     }
 
-    /**
-     * Whether this adapter trims to exactly the cap. Redis does not — `XADD`
-     * with `~` trims to a node boundary, which is the whole reason the
-     * scenario above only asserts the loose bound.
-     */
+    /** Whether this adapter trims to exactly the cap; Redis trims to a node boundary. */
     protected function trimsExactly(): bool
     {
         return true;

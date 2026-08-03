@@ -136,12 +136,9 @@ abstract class Base extends TestCase
 
     /**
      * Every upper bound below is set from the elapsed time the *regression*
-     * would produce, not from the time the correct code takes. A bound just
-     * above the expected duration measures the CI runner rather than the
-     * code, and fails rarely, unreproducibly, and only under load — which
-     * teaches everyone to hit re-run, which is how real regressions get
-     * waved through. Lower bounds are safe either way: a sleep cannot
-     * finish early.
+     * would produce, not from what the correct code takes — a tighter bound
+     * measures the CI runner. Lower bounds cannot flake: a sleep cannot end
+     * early.
      */
     public function testPollReturnsImmediatelyWhenEventsAreWaiting(): void
     {
@@ -189,9 +186,7 @@ abstract class Base extends TestCase
 
         $this->assertCount(0, $events);
         $this->assertGreaterThanOrEqual(0.08, $elapsed, 'Must actually wait out the timeout');
-        // Overshooting means sleeping the full 500ms interval past a 100ms
-        // deadline, so anything under 0.45 catches it — with 350ms of slack
-        // over the ~100ms this takes when correct.
+        // Overshooting sleeps the full 500ms interval past a 100ms deadline.
         $this->assertLessThan(0.45, $elapsed, 'Must not sleep a full interval past the deadline');
     }
 
@@ -278,11 +273,9 @@ abstract class Base extends TestCase
     }
 
     /**
-     * PHP parses `?lastEventId[]=1-0` into an array, so a `lastEventId` that
-     * is present need not be a string. Coercing one to "absent" would answer
-     * a malformed parameter with a full replay of the retained feed — the
-     * most expensive response the endpoint has, and one a caught-up consumer
-     * would read as a sudden flood of new events rather than as the 400 it is.
+     * PHP parses `?lastEventId[]=1-0` into an array, so a present
+     * `lastEventId` need not be a string. Coercing one to "absent" answers a
+     * malformed parameter with a full replay of the feed instead of a 400.
      */
     #[DataProvider('notStrings')]
     public function testServeRejectsALastEventIdThatIsNotEvenAString(mixed $lastEventId): void
@@ -309,10 +302,8 @@ abstract class Base extends TestCase
     }
 
     /**
-     * `limit` and `timeout` stay forgiving where `lastEventId` does not: both
-     * are the producer's to decide, so garbage falls back to the default
-     * rather than stalling a feed over something that cannot cause a wrong
-     * answer. An array is garbage like any other.
+     * `limit` and `timeout` stay forgiving where `lastEventId` does not:
+     * neither can cause a wrong answer. An array is garbage like any other.
      */
     public function testServeFallsBackToTheDefaultsOnArrayLimitsAndTimeouts(): void
     {
@@ -330,11 +321,9 @@ abstract class Base extends TestCase
     }
 
     /**
-     * The long-poll contract has to hold through the HTTP entry point, not
-     * only through `poll()`. A refactor that stopped forwarding the timeout
-     * would turn every long poll into a plain read — consumers would spin
-     * instead of waiting, and nothing that asserts on returned events could
-     * tell, because a caught-up read returns the same empty batch either way.
+     * The long-poll contract has to hold through the HTTP entry point too. A
+     * dropped timeout turns every long poll into a plain read, which no
+     * assertion on returned events can see — the batch is empty either way.
      */
     public function testServeHoldsALongPollOnAnEmptyFeed(): void
     {

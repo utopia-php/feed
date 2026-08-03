@@ -27,9 +27,8 @@ trait UsesPool
     private ?UtopiaPool $pool = null;
 
     /**
-     * A pool over the suite's Redis, on the adapter given — the default
-     * {@see Stack} for ordinary use, or one that records borrows for a test
-     * that asserts on how the store uses the pool rather than on what it reads.
+     * A pool over the suite's Redis: the default {@see Stack}, or one that
+     * records borrows for a test asserting on how the pool is used.
      *
      * @return UtopiaPool<\Redis|\RedisCluster>
      */

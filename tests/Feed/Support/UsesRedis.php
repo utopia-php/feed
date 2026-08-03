@@ -31,15 +31,9 @@ trait UsesRedis
     }
 
     /**
-     * A client that cannot reach a server, for the error contract.
-     *
-     * Every command on one raises `\RedisException` from the extension itself,
-     * so the wrapping runs for real rather than against a double that throws
-     * on cue. Closing a connected client would not do: phpredis reconnects
-     * transparently on the next command.
-     *
-     * It is also a real misconfiguration — a client handed to a store before
-     * anything connected it — rather than a state only a test can produce.
+     * A client that cannot reach a server: every command raises
+     * `\RedisException` from the extension itself. Closing a connected one
+     * would not do — phpredis reconnects on the next command.
      */
     protected static function unreachableRedis(): \Redis
     {

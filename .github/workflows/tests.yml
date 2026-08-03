@@ -48,9 +48,7 @@ jobs:
           docker compose build
           docker compose up -d
 
-      # Every suite, so the number covers the Redis and pooled adapters too —
-      # the ones whose error paths are easiest to leave untested. Printed for
-      # a human to read; there is deliberately no threshold yet, since a bad
-      # one is worse than none.
+      # Every suite, so the Redis and pooled adapters count too. No threshold
+      # yet — the number is there to be read.
       - name: Report coverage
         run: docker compose exec -T tests composer coverage:all

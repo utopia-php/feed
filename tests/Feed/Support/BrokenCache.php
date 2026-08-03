@@ -7,18 +7,11 @@ namespace Utopia\Tests\Support;
 use Utopia\Cache\Adapter;
 
 /**
- * A cache backend that is down, for testing that the cache-backed store and
- * cursor notice.
- *
- * It fails the two ways {@see \Utopia\Cache\Adapter\Redis} actually fails
- * rather than the way a test double would find convenient:
- *
- * - `save()` catches everything internally and answers `false`, so a caller
- *   that only looks at the absence of an exception sees a successful write.
- * - `load()` and `purge()` let the backend's own error out once the adapter's
- *   internal retries are exhausted — a raw `\RedisException` in production,
- *   stood in for here by a plain exception so the service-free suites stay
- *   service-free. What matters is that it is not a `Utopia\Feed\Exception`.
+ * A cache backend that is down, failing the two ways
+ * {@see \Utopia\Cache\Adapter\Redis} does: `save()` answers `false` without
+ * raising, and the rest let the backend's own error out. That error stands in
+ * for a `\RedisException` so the service-free suites stay service-free — all
+ * that matters is that it is not a `Utopia\Feed\Exception`.
  */
 class BrokenCache implements Adapter
 {

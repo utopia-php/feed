@@ -9,48 +9,32 @@ use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Key;
 
 /**
- * The keys a feed and a cursor occupy in one backend keyspace. Names come
- * from configuration and from third-party feeds, so the mapping has to stay
+ * The keys a feed and a cursor occupy in one keyspace. Names come from
+ * configuration and from third-party feeds, so the mapping has to stay
  * injective for names nobody vetted.
  */
 class KeyTest extends TestCase
 {
-    /**
-     * The layout the README documents and an operator reads from a shell —
-     * unchanged for every name anyone would actually pick, which is what makes
-     * escaping cheap enough to always do.
-     */
+    /** The layout the README documents, unchanged for any name anyone would pick. */
     public function testAnOrdinaryNameIsLeftAlone(): void
     {
         $this->assertSame('feed:edge', Key::feed('edge'));
         $this->assertSame('feed:edge:cursor:invalidator', Key::cursor('edge', 'invalidator'));
     }
 
-    /**
-     * The collision that corrupts data rather than losing it: the stream key
-     * of a feed named `edge:cursor:x` used to be the cursor key of consumer
-     * `x` on feed `edge`, so a cursor `SET` landed on an `XADD` stream.
-     */
+    /** A feed named `edge:cursor:x` used to take consumer `x`'s cursor key on `edge`. */
     public function testAFeedNameCannotCollideWithACursorKey(): void
     {
         $this->assertNotSame(Key::feed('edge:cursor:x'), Key::cursor('edge', 'x'));
     }
 
-    /**
-     * And the collision that silently shares one position between two
-     * unrelated consumers — the "two processes sharing a name" hazard the
-     * README warns about, arrived at without anyone sharing a name.
-     */
+    /** And the one that silently shares a position between two unrelated consumers. */
     public function testTwoDistinctPairsCannotShareACursorKey(): void
     {
         $this->assertNotSame(Key::cursor('a:cursor:b', 'c'), Key::cursor('a', 'b:cursor:c'));
     }
 
-    /**
-     * Escaping is only injective if the escape character is escaped too:
-     * without that, `a:b` and `a%3Ab` would map to the same key and the fix
-     * would just move the collision somewhere less obvious.
-     */
+    /** Without escaping the escape character, `a:b` and `a%3Ab` would still collide. */
     public function testTheEscapeCharacterIsItselfEscaped(): void
     {
         $this->assertNotSame(Key::feed('a:b'), Key::feed('a%3Ab'));

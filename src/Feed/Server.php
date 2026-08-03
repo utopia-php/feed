@@ -54,13 +54,10 @@ class Server
         /** @var mixed $lastEventId */
         $lastEventId = $query[self::PARAM_LAST_EVENT_ID] ?? null;
 
-        // Absent and empty both mean "from the oldest retained event". Anything
-        // else present has to be a position or the sentinel — including values
-        // that are not strings at all: PHP parses `?lastEventId[]=1-0` into an
-        // array, and reading that as absent would answer a malformed parameter
-        // with a full replay of the retained feed. That is the most expensive
-        // response there is, and a caught-up consumer would take it for a
-        // sudden flood of new events rather than for the 400 it should be.
+        // Absent and empty mean "from the oldest retained event"; anything else
+        // must be a position or the sentinel, non-strings included. PHP parses
+        // `?lastEventId[]=1-0` into an array, and reading that as absent would
+        // answer a malformed parameter with a full replay of the feed.
         if ($lastEventId === null || $lastEventId === '') {
             $lastEventId = null;
         } elseif (!\is_string($lastEventId)) {
@@ -69,9 +66,7 @@ class Server
             throw new Exception\Invalid('Invalid lastEventId: ' . $lastEventId);
         }
 
-        // `limit` and `timeout` stay forgiving: both are the producer's to
-        // decide, so a garbage value falls back to the default rather than
-        // stalling a feed over something that does not affect correctness.
+        // `limit` and `timeout` stay forgiving: neither can cause a wrong answer.
         $limit = $query[self::PARAM_LIMIT] ?? null;
         $timeout = $query[self::PARAM_TIMEOUT] ?? null;
 

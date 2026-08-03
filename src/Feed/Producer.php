@@ -43,21 +43,11 @@ class Producer
     /**
      * Publish a prepared event.
      *
-     * Three attributes are the producer's, not the caller's, and are replaced
-     * whatever the event arrived with:
-     *
-     * - `source` becomes this producer's. It records where the event happened,
-     *   and a producer can only speak for itself — an event relayed from
-     *   another feed is published as this service's event, not as the original
-     *   producer's. Keep the origin in an extension attribute if it matters.
-     * - `id` is assigned by the store, since it is also the event's position
-     *   in the feed and only the store can order it.
-     * - `time` is stamped as now when the event carries none.
-     *
-     * Everything else — `subject`, `datacontenttype`, `dataschema`, `data`
-     * and extensions — is published as prepared. `specversion` reads back as
-     * `1.0`: it is the only version the stored form can be decoded as, so a
-     * store that kept another one would hold an entry nothing could read.
+     * Three attributes are replaced whatever the event arrived with: `source`
+     * (a producer only speaks for itself, so a relayed event is republished as
+     * this service's), `id` (the store assigns it — it is also the position)
+     * and a missing `time`. `specversion` reads back as `1.0`; the rest is
+     * published as prepared.
      *
      * @throws Exception\Invalid When the event has no type or cannot be encoded.
      * @throws Exception When the backend rejects the event.

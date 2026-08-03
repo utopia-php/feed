@@ -6,10 +6,7 @@ namespace Utopia\Tests\Support;
 
 use Utopia\Cache\Adapter\Memory;
 
-/**
- * A working cache that records how often each key was read, for asserting on
- * what an operation costs the backend rather than only on what it returns.
- */
+/** A working cache that records how often each key was read. */
 class CountingCache extends Memory
 {
     /** @var array<string, int> Reads per key. */

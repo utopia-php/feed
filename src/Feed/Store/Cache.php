@@ -16,15 +16,7 @@ class Cache extends Store implements Appendable
 {
     public const int TTL = 30 * 24 * 60 * 60; // 30 days
 
-    /**
-     * Deliberately far below the {@see Store::MAX_SIZE} the Redis store
-     * inherits, where trimming happens server-side and reads are ranged.
-     * Here the whole feed lives under one key, so retention is also the size
-     * of every append's read-modify-write: at 100 000 entries a single
-     * `produce()` moves megabytes through the cache both ways. A larger cap
-     * is a fine choice for a low-rate feed, but it should be one somebody
-     * made rather than one inherited from a backend with other costs.
-     */
+    /** Far below {@see Store::MAX_SIZE}: an append here rewrites the whole feed. */
     protected const int MAX_SIZE = 1_000; // entries
 
     public function __construct(
@@ -53,10 +45,8 @@ class Cache extends Store implements Appendable
             $entries = \array_slice($entries, -$this->maxSize);
         }
 
-        // The tip marker goes first, so it is never behind the feed. A crash
-        // between the two writes leaves it ahead, which only costs a read that
-        // finds nothing; behind, it would report a caught-up consumer and the
-        // event would never be delivered.
+        // The marker first, so it can be ahead of the feed but never behind:
+        // behind, it would report a caught-up consumer and lose the event.
         $this->write(Key::tip($this->name), $id);
         $this->write($this->key(), $entries);
 
@@ -65,7 +55,7 @@ class Cache extends Store implements Appendable
 
     /**
      * @param string|array<int|string, mixed> $value
-     * @throws Transport When the write fails, either way a cache adapter can.
+     * @throws Transport When the write fails, either way a cache can.
      */
     private function write(string $key, string|array $value): void
     {
@@ -115,17 +105,9 @@ class Cache extends Store implements Appendable
     }
 
     /**
-     * Whether the feed provably holds nothing after $lastEventId, decided from
-     * the tip marker alone.
-     *
-     * The whole feed lives under one key, so answering this by reading it
-     * costs the entire retained feed — every poll tick, per waiting consumer,
-     * for up to 30 seconds a request. The marker turns the common case, a
-     * caught-up consumer waiting on a quiet feed, into one small read.
-     *
-     * Only ever used to skip work, never to invent an answer: the marker is
-     * written before the feed, so it is never behind, and a missing or
-     * unreadable one falls through to the real read.
+     * Whether the feed provably holds nothing after $lastEventId, from the tip
+     * marker alone — so a caught-up long poll does not load the whole feed per
+     * tick. Only ever used to skip a read, never to answer one.
      *
      * @throws Transport When the cache backend cannot be reached.
      */
@@ -155,10 +137,6 @@ class Cache extends Store implements Appendable
             /** @var mixed $stored */
             $stored = $this->cache->load($this->key(), $this->ttl);
         } catch (\Throwable $error) {
-            // A cache adapter over a backend that is down raises whatever that
-            // backend raises — a raw \RedisException, say. Every error this
-            // library reports extends Utopia\Feed\Exception, and a consumer
-            // retrying on Transport must not crash on a backend blip instead.
             throw new Transport("Failed to read the {$this->name} feed: {$error->getMessage()}", previous: $error);
         }
 

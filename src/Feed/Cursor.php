@@ -24,8 +24,8 @@ abstract class Cursor
     abstract public function reset(string $feed, string $consumer): void;
 
     /**
-     * The gate every cursor operation goes through, so no adapter can build a
-     * key of its own and skip the check or diverge from the layout.
+     * The gate every cursor operation goes through, so no adapter builds a key
+     * of its own and skips the check.
      *
      * @throws Invalid When either name is empty.
      */

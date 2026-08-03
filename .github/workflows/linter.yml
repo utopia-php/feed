@@ -14,10 +14,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # Run against the test image rather than a bare composer container, as
-      # the analysis job does: the codebase uses PHP 8.5 syntax that pint can
-      # only parse on a new enough runtime, and whatever version `composer:latest`
-      # happens to ship would otherwise be an unstated build dependency.
+      # The project's own image, as the analysis job uses: pint needs a PHP
+      # new enough to parse 8.5 syntax, which `composer:latest` does not pin.
       - name: Build
         run: |
           docker compose build tests

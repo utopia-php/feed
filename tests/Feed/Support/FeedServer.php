@@ -20,11 +20,9 @@ use Utopia\Psr7\Stream;
  * parameters, body and caching — rather than a fixture written to match the
  * consumer.
  *
- * It routes on the request path too, minimally but honestly. The feed name is
- * the one thing on the wire that only the serving side can check: `Remote`
- * `rawurlencode()`s it into the path, and a fixture that ignored the path
- * would answer any name with the one feed it holds — so a consumer pointed at
- * the wrong feed would read the right events and no test could tell.
+ * It routes on the request path too: a fixture that ignored it would answer
+ * any feed name with the one feed it holds, so a consumer pointed at the
+ * wrong feed would read the right events and no test could tell.
  */
 class FeedServer extends FakeClient
 {
@@ -54,12 +52,9 @@ class FeedServer extends FakeClient
     /**
      * The feed name the request asks for: the last path segment, decoded.
      *
-     * Split before decoding, never after — `Remote` percent-encodes the name
-     * into one segment, so a feed called `a/b` arrives as `a%2Fb` and decoding
-     * first would split it into a path it never asked for.
-     *
-     * The path may be relative and hold no slash at all: a consumer built
-     * straight over a client with no base URI sends the bare name.
+     * Split before decoding, never after — a feed called `a/b` arrives as
+     * `a%2Fb`. The path may also hold no slash at all, since a client with no
+     * base URI sends the bare name.
      */
     private static function feed(RequestInterface $request): string
     {

@@ -51,9 +51,7 @@ class CacheTest extends Base
 
     /**
      * The whole feed lives under one key, so answering "anything new?" by
-     * reading it costs the entire retained feed — every poll tick, per waiting
-     * consumer, for up to 30 seconds a request. A caught-up consumer on a
-     * quiet feed is the common case, and it must not pay that.
+     * reading it costs the entire feed — per tick, per waiting consumer.
      */
     public function testACaughtUpPollReadsTheTipMarkerRatherThanTheFeed(): void
     {
@@ -71,10 +69,8 @@ class CacheTest extends Base
     }
 
     /**
-     * The marker is only ever allowed to skip work, never to invent an answer.
-     * A cache is free to drop one key and keep another, so a marker that is
-     * gone must fall through to the real read rather than read as "caught up"
-     * and strand the consumer.
+     * A cache may drop one key and keep another, so a missing marker must fall
+     * through to the real read rather than strand the consumer.
      */
     public function testAMissingTipMarkerFallsBackToReadingTheFeed(): void
     {
@@ -86,10 +82,7 @@ class CacheTest extends Base
         $this->assertCount(1, $this->store->read($first, 10));
     }
 
-    /**
-     * And the gate must not be sticky: a consumer told it was caught up has to
-     * see the next event, or a quiet feed would stay quiet forever.
-     */
+    /** And the gate must not be sticky, or a quiet feed stays quiet forever. */
     public function testAnEventAppendedAfterACaughtUpReadIsStillDelivered(): void
     {
         $first = $this->producer->produce('a');
@@ -101,11 +94,7 @@ class CacheTest extends Base
         $this->assertCount(1, $this->store->read($first, 10), 'And no longer');
     }
 
-    /**
-     * Retention is also the size of every append's read-modify-write here, so
-     * the cache store keeps a far smaller default than the Redis store, whose
-     * trimming is server-side and whose reads are ranged.
-     */
+    /** Retention is also the size of every append here, so the default is far smaller. */
     public function testTheDefaultRetentionIsScaledToWhatAnAppendCosts(): void
     {
         $store = new CacheStore($this->cache(), $this->name);
@@ -128,11 +117,9 @@ class CacheTest extends Base
     }
 
     /**
-     * A cache adapter lets the backend's own error out once its internal
-     * retries are exhausted, so without wrapping a raw \RedisException escapes
-     * this library entirely. The canonical consume loop retries on Transport
-     * and would crash on a backend blip instead — the exact failure mode the
-     * Transport contract exists to prevent.
+     * A cache lets the backend's own error out once its retries are exhausted.
+     * Unwrapped, the canonical consume loop crashes on a backend blip instead
+     * of retrying — what the Transport contract exists to prevent.
      *
      * @param callable(Store&Appendable): void $operation
      */
@@ -165,9 +152,8 @@ class CacheTest extends Base
     }
 
     /**
-     * A cache that answers a write with false rather than raising must be
-     * caught too — the entry is not in the feed, so reporting the position it
-     * would have had would invent an event no consumer can ever read.
+     * A write answered with false must be caught too, or the position reported
+     * names an event no consumer can ever read.
      */
     public function testACacheThatRejectsTheWriteRaisesTransport(): void
     {

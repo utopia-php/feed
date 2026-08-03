@@ -43,12 +43,9 @@ class HttpTest extends Base
     }
 
     /**
-     * http-feeds endpoints commonly use UUIDs, and `Remote` reads them fine —
-     * a consumer tracks such a position and sends it back as `lastEventId`
-     * without complaint. Judging the shape here as well would take the
-     * poison-event escape hatch away from exactly the consumers that have no
-     * way around it: the id `seek()` refused would be one the consumer itself
-     * had just handled and saved.
+     * http-feeds endpoints commonly use UUIDs, which `Remote` reads and
+     * `consume()` already saves — so refusing one here would take the
+     * poison-event escape hatch away from the consumers that need it most.
      */
     public function testSeekAcceptsTheOpaqueIdARemoteFeedMayUse(): void
     {
@@ -63,10 +60,8 @@ class HttpTest extends Base
 
     /**
      * The feed name is the one thing on the wire only the serving side can
-     * check. `Remote` encodes it into the request path, and the consumer's own
-     * `feed:` check is client-side — so nothing confirmed end to end that the
-     * name reaching the endpoint is the one it holds. A consumer pointed at
-     * the wrong feed must fail rather than read the right events by accident.
+     * check — the consumer's own `feed:` check is client-side. Pointed at the
+     * wrong feed it must fail, not read the right events by accident.
      */
     public function testAConsumerPointedAtAnotherFeedIsNotServedThisOne(): void
     {
@@ -85,10 +80,8 @@ class HttpTest extends Base
     }
 
     /**
-     * A name that needs encoding survives the round trip: `Remote` percent-
-     * encodes it into one path segment and the endpoint decodes that segment
-     * back. Asserting the URI string alone, as the encoding test does, cannot
-     * show that anything decodes it to the name the producer knows.
+     * A name that needs encoding survives the round trip. Asserting the URI
+     * string, as the encoding test does, cannot show that anything decodes it.
      */
     public function testAFeedNameThatNeedsEncodingStillRoutes(): void
     {
@@ -101,12 +94,7 @@ class HttpTest extends Base
         $this->assertStringContainsString('a%20b%2Fc', $this->endpoint->recorder->last()['uri']);
     }
 
-    /**
-     * The two halves of the media type handshake, checked against each other
-     * rather than each against a literal: the `Accept` the consumer sends is
-     * the `Content-Type` the producer answers with. Both now alias one
-     * constant, so this is what would notice if they stopped.
-     */
+    /** The two halves of the handshake checked against each other, not against a literal. */
     public function testTheAcceptSentIsTheContentTypeServed(): void
     {
         $this->producer->produce('a');
@@ -120,14 +108,9 @@ class HttpTest extends Base
     }
 
     /**
-     * One event through the real wire code in both directions — `Batch`
-     * encoding it in the endpoint, `Remote` decoding it on the way back —
-     * with every attribute asserted on the far side.
-     *
-     * The shared consumer scenarios record only `type`, and the producer and
-     * server suites round-trip the rest through the *store*. So an encoder or
-     * decoder that dropped `subject`, `source`, `dataschema` or an extension
-     * on the wire specifically would pass everything else in the suite.
+     * One event through the real wire code both ways, every attribute
+     * asserted. Everything else round-trips through the store instead, so a
+     * drop on the wire specifically would pass the rest of the suite.
      */
     public function testAnEventSurvivesTheWireWithEveryAttribute(): void
     {

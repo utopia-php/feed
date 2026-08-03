@@ -37,9 +37,7 @@ class MemoryTest extends Base
         $elapsed = \microtime(true) - $started;
 
         $this->assertCount(1, $events);
-        // Ignoring the configured interval means falling back to the 500ms
-        // default, so anything under 0.45 catches it — with 400ms of slack
-        // over the ~20ms this takes when correct.
+        // Ignoring the configured interval falls back to the 500ms default.
         $this->assertLessThan(0.45, $elapsed, 'A 20ms interval must beat the default 500ms floor');
     }
 }

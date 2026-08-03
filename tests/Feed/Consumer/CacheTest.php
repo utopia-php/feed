@@ -15,13 +15,9 @@ class CacheTest extends Base
     use UsesCache;
 
     /**
-     * A feed in the cache, and a producer over it.
-     *
-     * The shared scenarios run against a memory feed on purpose, and swap only
-     * the cursor — so `Store\Cache` was exercised by the producer and server
-     * suites but never by a `Consumer`, which is the integration the adapter
-     * exists for: a service that already carries a cache keeping both the feed
-     * and the position there.
+     * A feed in the cache, and a producer over it — the integration the
+     * adapter exists for, which the shared scenarios miss by swapping only
+     * the cursor.
      *
      * @return array{Store&Appendable, Producer}
      */
@@ -49,12 +45,7 @@ class CacheTest extends Base
         $this->assertSame(['c'], $this->drain($this->consumer(store: $store)), 'Resumes without replaying');
     }
 
-    /**
-     * The consumer's poll loop over this adapter, which reads the feed
-     * differently from the others: a caught-up tick answers from the tip
-     * marker rather than by loading the feed, so "caught up" has to keep
-     * meaning caught up and not "nothing more, ever".
-     */
+    /** A caught-up tick answers from the tip marker, so it must not get stuck there. */
     public function testACaughtUpConsumerStillSeesTheNextEvent(): void
     {
         [$store, $producer] = $this->fed();

@@ -166,10 +166,8 @@ class RemoteTest extends TestCase
         $started = \microtime(true);
         $remote->poll(null, 100, 5000);
 
-        // The request count is the real check — it catches a client-side loop
-        // whatever the machine is doing. The clock only guards against a wait
-        // that makes no request at all, and is bounded by the 5s a wrong
-        // implementation would take rather than the ~0s this one does.
+        // The request count is the real check; the clock is bounded by the 5s
+        // a client-side loop would take, not by the ~0s this takes.
         $this->assertLessThan(1, \microtime(true) - $started, 'Must not wait client-side');
         $this->assertCount(1, $transport->recorder->requests, 'Must not poll in a loop');
         $this->assertStringContainsString('timeout=5000', $transport->recorder->last()['uri']);
@@ -304,10 +302,8 @@ class RemoteTest extends TestCase
     /**
      * One event as a producer would put it on the wire.
      *
-     * Overrides win, and are unioned rather than merged: a digits-only
-     * extension name is legal per the spec and an integer key in PHP, which
-     * `array_merge()` would silently renumber — losing the attribute inside
-     * the fixture, before the code under test ever saw it.
+     * Overrides win, and are unioned rather than merged: `array_merge()`
+     * renumbers a digits-only name, losing it inside the fixture.
      *
      * @param array<array-key, mixed> $overrides
      * @return array<array-key, mixed>
@@ -383,10 +379,8 @@ class RemoteTest extends TestCase
     }
 
     /**
-     * Every context attribute this library models has to come off the wire,
-     * not only the ones a consumer happens to look at. An attribute silently
-     * dropped in decoding is the same class of bug as one dropped in storing,
-     * and neither shows up in a test that asserts on `id` and `data` alone.
+     * Every attribute this library models has to come off the wire, not only
+     * the ones a test asserting on `id` and `data` happens to look at.
      */
     public function testEveryModelledAttributeComesOffTheWire(): void
     {
@@ -413,12 +407,7 @@ class RemoteTest extends TestCase
         $this->assertSame('00-abc-def-01', $event->extensions['traceparent']);
     }
 
-    /**
-     * CloudEvents reads an absent `datacontenttype` as "the data is JSON", so
-     * a feed that does not send one must decode without inventing it — the
-     * attribute stays unset rather than becoming a value the producer never
-     * claimed.
-     */
+    /** An absent `datacontenttype` means JSON, so it must not be invented on decode. */
     public function testAnAbsentDatacontenttypeIsNotInvented(): void
     {
         [$remote] = $this->remote([FakeTransport::json([self::raw('1-0', 'a')])]);
@@ -450,14 +439,9 @@ class RemoteTest extends TestCase
     }
 
     /**
-     * The spec is narrow about extensions — a name of lowercase letters and
-     * digits, a value that is a boolean, an integer or a string — and a feed
-     * is read by consumers older than its producer by design. So an attribute
-     * outside that is dropped and the event still delivered, rather than one
-     * odd attribute costing the whole event and everything behind it.
-     *
-     * Dropping is a choice, not an accident, which is why each shape it can
-     * take is named here.
+     * An attribute the spec cannot carry is dropped and the event still
+     * delivered, rather than one odd attribute costing the whole event.
+     * Dropping is a choice, so each shape it takes is named here.
      *
      * @param array<string, mixed> $extension
      */
@@ -491,11 +475,7 @@ class RemoteTest extends TestCase
         ];
     }
 
-    /**
-     * The types the spec does allow, including a digits-only name — legal per
-     * the spec, and an integer key in PHP, which anything merging with
-     * `array_merge()` would silently renumber.
-     */
+    /** The types the spec allows, including a digits-only name — an integer key in PHP. */
     public function testEveryExtensionTheSpecAllowsIsKept(): void
     {
         [$remote] = $this->remote([FakeTransport::json([

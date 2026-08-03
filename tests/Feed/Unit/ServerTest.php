@@ -13,11 +13,10 @@ use Utopia\Feed\Store\None;
 use Utopia\Tests\Support\RecordingStore;
 
 /**
- * The server behaviours no working adapter can show: serving a feed whose
- * backend was never configured, and what the server asks its store for.
- * Clamping and coercion are invisible in the events that come back, so only a
- * store that records its arguments can tell them from a server that dropped
- * them entirely. Everything else lives in {@see \Utopia\Tests\Server\Base}.
+ * The server behaviours no working adapter can show: a backend that was never
+ * configured, and what the server asks its store for — clamping is invisible
+ * in the events that come back. Everything else lives in
+ * {@see \Utopia\Tests\Server\Base}.
  */
 class ServerTest extends TestCase
 {
@@ -31,10 +30,8 @@ class ServerTest extends TestCase
     }
 
     /**
-     * `timeout` arrives from an untrusted HTTP client, so this is the clamp
-     * that keeps `?timeout=86400000` from holding a worker for as long as the
-     * caller feels like asking. The consumer clamps its own inputs too, but
-     * that is a different clamp against a different caller.
+     * `timeout` arrives from an untrusted client, so this clamp keeps
+     * `?timeout=86400000` from holding a worker for as long as it asks.
      *
      * @param array<array-key, mixed> $query
      */

@@ -38,11 +38,9 @@ class RedisTest extends Base
     }
 
     /**
-     * Feeds and cursors share one Redis keyspace, and both keys are built by
-     * joining names with `:`. Joined raw, a feed named `<feed>:cursor:x` takes
-     * the key consumer `x`'s position on `<feed>` occupies, so a cursor `SET`
-     * lands on a stream — a WRONGTYPE at best, and at worst one silently
-     * destroying the other.
+     * Feeds and cursors share one keyspace. Joined raw, a feed named
+     * `<feed>:cursor:x` takes the key consumer `x`'s position occupies, and
+     * the cursor `SET` lands on — and destroys — the stream.
      */
     public function testAFeedNamedLikeACursorKeyDoesNotCollideWithOne(): void
     {
@@ -70,15 +68,9 @@ class RedisTest extends Base
     }
 
     /**
-     * A stream is a shared, writable thing: another tool can `XADD` into a
-     * feed, and this library's own producer cannot be the only writer assumed.
-     * An entry carrying an attribute a CloudEvent cannot hold must therefore
-     * decode without it, exactly as the same event would arriving over HTTP.
-     *
-     * The failure this prevents is the worst shape a feed has: a read decodes
-     * every entry in the batch, so one poisoned entry would fail every read
-     * past it — permanently, for every consumer, until it fell off the trim
-     * horizon.
+     * Any tool can `XADD` into a stream, so an entry carrying an attribute a
+     * CloudEvent cannot hold must decode without it — as over HTTP. A read
+     * decodes every entry, so otherwise it fails every read past it forever.
      */
     public function testAForeignWritersUnusableExtensionIsDroppedRatherThanWedgingTheFeed(): void
     {
@@ -104,12 +96,9 @@ class RedisTest extends Base
     }
 
     /**
-     * The README promises `Transport` when "the backend or network failed:
-     * Redis errors, HTTP failures". The HTTP half of that promise is tested
-     * thoroughly; the Redis half — the flagship production adapter — was not
-     * tested at all, so a regression letting a raw `\RedisException` out would
-     * have shipped green and crashed every consumer catching
-     * `Utopia\Feed\Exception` per the README.
+     * The README promises `Transport` for a Redis failure. Untested, a raw
+     * `\RedisException` escaping would crash consumers catching
+     * `Utopia\Feed\Exception` as documented.
      *
      * @param callable(Store&Appendable): void $operation
      */
@@ -142,11 +131,9 @@ class RedisTest extends Base
     }
 
     /**
-     * A foreign value under the feed's key — someone else's key collision, or
-     * a leftover from another tool — makes Redis answer every stream command
+     * A foreign value under the feed's key makes Redis answer stream commands
      * with an error rather than raising. Appending must not report a position
-     * for an event that is not in the feed, so the reply is checked rather
-     * than trusted.
+     * for an event that is not in the feed, so the reply is checked.
      */
     public function testAppendingOverAForeignValueRaisesTransport(): void
     {
@@ -158,10 +145,8 @@ class RedisTest extends Base
     }
 
     /**
-     * Reading past the same value is the opposite call: a feed nobody can read
-     * is an empty feed — a replay at worst — and failing the read instead
-     * would stall every consumer of it. Same policy the cache store applies to
-     * a foreign value under its key.
+     * Reading is the opposite call: a feed nobody can read is an empty one — a
+     * replay at worst — where failing would stall every consumer of it.
      */
     public function testReadingPastAForeignValueIsAnEmptyFeed(): void
     {

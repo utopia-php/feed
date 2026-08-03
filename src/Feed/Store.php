@@ -74,14 +74,11 @@ abstract class Store implements Readable
     }
 
     /**
-     * Every attribute a CloudEvent carries, flattened to strings.
-     *
-     * `specversion` is not among them: it is restored as `1.0` because that is
-     * the only version {@see CloudEvent::fromArray()} accepts, so storing
-     * another one would make the entry permanently unreadable. `id` is not
-     * either — the store assigns it and hands it back to {@see self::decode()}.
-     * An empty string stands for an absent optional attribute; the spec has no
-     * null attribute values, so it cannot collide with a real one.
+     * Every attribute a CloudEvent carries, flattened to strings, with the
+     * empty string for an absent one — the spec has no null attribute values,
+     * so it cannot collide. `id` and `specversion` are left out: the store
+     * assigns the first, and `1.0` is the only version {@see self::decode()}
+     * can restore.
      *
      * @return array<string, string>
      */
@@ -120,10 +117,8 @@ abstract class Store implements Readable
             }
         }
 
-        // Filtered rather than merged verbatim, and for the same reason the
-        // wire path filters: a read decodes every entry in the batch, so one
-        // entry a foreign writer left an unusable attribute on would otherwise
-        // fail every read past it, permanently, for every consumer.
+        // Filtered, not merged verbatim: a read decodes every entry, so one a
+        // foreign writer poisoned would fail every read past it forever.
         $event += Extensions::filter(\is_array($extensions) ? $extensions : []);
 
         try {

@@ -119,18 +119,10 @@ class Consumer
     /**
      * Move the position by hand.
      *
-     * What counts as a usable id is the feed's to say, not this library's.
-     * A local {@see Store} mints `{ms}-{seq}` positions and pages by decoding
-     * them, so anything else is a caller's mistake and is rejected here rather
-     * than on the next read. A feed reached over HTTP is another producer's:
-     * http-feeds endpoints commonly use UUIDs, `Remote` accepts any non-empty
-     * id, and `consume()` already tracks and sends one back — so refusing one
-     * here would take the documented poison-event escape hatch away from
-     * exactly the consumers that cannot work around it.
-     *
-     * The tip sentinel is refused either way: it stands for "wherever the feed
-     * ends when the request arrives", which is a start, not a position. That
-     * is what `reset()` on a {@see self::START_TIP} consumer expresses.
+     * What counts as a usable id is the feed's to say: a local {@see Store}
+     * mints `{ms}-{seq}` positions and pages by decoding them, while a remote
+     * producer is the authority on its own (http-feeds endpoints commonly use
+     * UUIDs). Both refuse the tip sentinel, which is a start, not a position.
      *
      * @throws Exception\Invalid When $eventId cannot be a position on this feed
      * @throws Exception When the cursor store cannot be written

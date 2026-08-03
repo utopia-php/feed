@@ -12,10 +12,8 @@ class PoolTest extends Base
     use UsesPool;
 
     /**
-     * Every cursor operation borrows a connection and must give it back —
-     * including `reset()` and a `seek()` that the shared scenarios drive but
-     * never watch the pool through. A leak here drains the pool over a
-     * consumer's lifetime rather than failing anything outright.
+     * Every cursor operation borrows a connection and must give it back. A
+     * leak drains the pool over a consumer's lifetime rather than failing.
      */
     public function testEveryCursorOperationReturnsItsConnection(): void
     {

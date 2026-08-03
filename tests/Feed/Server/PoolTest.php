@@ -14,15 +14,9 @@ class PoolTest extends Base
     use UsesPool;
 
     /**
-     * The property the pooled store exists for, and the only one the shared
-     * scenarios cannot show: a long poll is a loop of reads, and the store
-     * borrows for each read rather than once around the whole loop. Held for
-     * the wait, one poll would tie up a connection for up to 30 seconds, so a
-     * handful of idle consumers would exhaust the pool.
-     *
-     * Asserted as a count of releases, so an "optimization" that hoists the
-     * borrow out of the loop fails here instead of silently removing the
-     * class's entire reason to exist.
+     * The property the pooled store exists for: a long poll borrows per read,
+     * not once around the loop, so an idle consumer does not tie up a
+     * connection for 30 seconds. Counted, so hoisting the borrow fails here.
      */
     public function testAHeldPollBorrowsPerReadRatherThanForTheWholeWait(): void
     {
@@ -39,11 +33,7 @@ class PoolTest extends Base
         );
     }
 
-    /**
-     * The other half of the same property: every borrow is given back. A leak
-     * would not fail a functional test until the pool ran dry, which in a
-     * service is minutes into production rather than here.
-     */
+    /** Every borrow is given back — a leak fails nothing until the pool runs dry. */
     public function testEveryBorrowIsReturnedToThePool(): void
     {
         $this->producer->produce('a');

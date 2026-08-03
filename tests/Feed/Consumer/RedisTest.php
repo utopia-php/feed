@@ -20,14 +20,9 @@ class RedisTest extends Base
     use UsesRedis;
 
     /**
-     * A feed on a real Redis stream, and a producer over it.
-     *
-     * The shared scenarios run against a memory feed on purpose — a failure
-     * there is the consuming side's, not a store's. But that leaves the
-     * consumer's paging arithmetic (`Id::after`, strictly-after reads, the
-     * batch loop) exercised only against ids this library mints itself, never
-     * against the ones `XADD` assigns or the approximate trimming `XRANGE`
-     * reads back. The scenarios below fill exactly that gap and no more.
+     * A feed on a real Redis stream, and a producer over it. The shared
+     * scenarios use a memory feed, so the consumer's paging arithmetic is
+     * otherwise never run against the ids `XADD` assigns.
      *
      * @return array{Store&Appendable, Producer}
      */
@@ -55,9 +50,8 @@ class RedisTest extends Base
     }
 
     /**
-     * `XADD` assigns ids within one millisecond by bumping the sequence, so a
-     * batch boundary regularly falls between two ids sharing a timestamp —
-     * which is the case paging by string comparison would get wrong.
+     * `XADD` bumps the sequence within a millisecond, so a batch boundary
+     * regularly falls between two ids sharing a timestamp.
      */
     public function testPagesAStreamInBatchesWithoutSkippingOrRepeating(): void
     {
@@ -122,10 +116,8 @@ class RedisTest extends Base
     }
 
     /**
-     * The cursor's half of the `Transport` contract. `FailingCursor` shows how
-     * a consumer reacts to a `Transport`, but it raises one itself — the
-     * `\RedisException` wrapping this adapter does was never run under test,
-     * so a regression letting the raw exception out would have shipped green.
+     * The cursor's half of the `Transport` contract: `FailingCursor` raises
+     * one itself, so the wrapping here is otherwise never run.
      *
      * @param callable(Cursor): void $operation
      */
@@ -157,11 +149,7 @@ class RedisTest extends Base
         ];
     }
 
-    /**
-     * And the consumer's own contract on top of it: a position that cannot be
-     * read stops the run, since reading from an unknown position would replay
-     * the retained feed rather than report the failure.
-     */
+    /** A position that cannot be read stops the run rather than replaying the feed. */
     public function testAConsumerOverAnUnreachableCursorStopsWithTransport(): void
     {
         $this->producer->produce('a');

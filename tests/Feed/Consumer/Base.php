@@ -487,11 +487,7 @@ abstract class Base extends TestCase
         $this->assertSame(['a', 'b'], $this->drain($consumer), 'The reset stands, so everything retained replays');
     }
 
-    /**
-     * Whether the feed under test mints the positions it pages by, and so is
-     * the authority on their shape. A local store is; another producer's feed,
-     * read over HTTP, is not.
-     */
+    /** Whether the feed under test mints its own positions, and so judges their shape. */
     protected function ownsItsIdFormat(): bool
     {
         return true;
@@ -524,8 +520,7 @@ abstract class Base extends TestCase
 
     /**
      * Rejected whatever the feed is: an empty string names nothing, and the
-     * tip sentinel stands for wherever the feed ends when the request arrives
-     * — a start rather than a position.
+     * tip sentinel is a start rather than a position.
      *
      * @return array<string, array{string}>
      */

@@ -14,13 +14,8 @@ use Utopia\Feed\Exception\Invalid;
  * provides: a position is remembered, keyed by feed *and* consumer, forgotten
  * on reset, and every operation refuses a name it cannot key.
  *
- * Most of this is also visible through {@see \Utopia\Tests\Consumer\Base},
- * which runs every cursor adapter — but not all of it. `Consumer` validates
- * its own name before the cursor is ever touched, so the adapters' `Invalid`
- * path is unreachable from there, and nothing else checks that each adapter
- * routes all three operations through the shared {@see Cursor::key()} rather
- * than building a key of its own. An adapter that did would skip the
- * validation and diverge from the documented key layout at the same time.
+ * The consumer scenarios cover most of this sideways, but not the `Invalid`
+ * path — `Consumer` validates its own name before the cursor is touched.
  */
 abstract class Base extends TestCase
 {
@@ -114,11 +109,8 @@ abstract class Base extends TestCase
     }
 
     /**
-     * A name that cannot be keyed is refused by every operation, not only by
-     * whichever one a caller happens to reach first. This is the assertion
-     * that says the adapter goes through the shared key builder at all —
-     * `Consumer` validates its own name long before the cursor sees it, so
-     * nothing else here can.
+     * Refused by every operation, not just the first one a caller reaches —
+     * which is what says the adapter goes through the shared key builder.
      *
      * @param callable(Cursor, string, string): void $operation
      */
