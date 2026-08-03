@@ -20,25 +20,36 @@ use Utopia\Pools\Pool as UtopiaPool;
  */
 trait UsesPool
 {
+    /** The pool's connection count, and so the number of concurrent borrows it allows. */
+    protected const int POOL_SIZE = 4;
+
     /** @var UtopiaPool<\Redis|\RedisCluster>|null */
     private ?UtopiaPool $pool = null;
+
+    /**
+     * A pool over the suite's Redis, on the adapter given — the default
+     * {@see Stack} for ordinary use, or one that records borrows for a test
+     * that asserts on how the store uses the pool rather than on what it reads.
+     *
+     * @return UtopiaPool<\Redis|\RedisCluster>
+     */
+    protected static function poolOver(Stack $adapter): UtopiaPool
+    {
+        /** @var UtopiaPool<\Redis|\RedisCluster> $pool */
+        $pool = new UtopiaPool($adapter, 'feed-tests', self::POOL_SIZE, static function (): \Redis {
+            $redis = new \Redis();
+            $redis->connect((string) (\getenv('REDIS_HOST') ?: 'redis'), (int) (\getenv('REDIS_PORT') ?: 6379));
+
+            return $redis;
+        });
+
+        return $pool;
+    }
 
     /** @return UtopiaPool<\Redis|\RedisCluster> */
     protected function pool(): UtopiaPool
     {
-        if ($this->pool === null) {
-            /** @var UtopiaPool<\Redis|\RedisCluster> $pool */
-            $pool = new UtopiaPool(new Stack(), 'feed-tests', 4, static function (): \Redis {
-                $redis = new \Redis();
-                $redis->connect((string) (\getenv('REDIS_HOST') ?: 'redis'), (int) (\getenv('REDIS_PORT') ?: 6379));
-
-                return $redis;
-            });
-
-            $this->pool = $pool;
-        }
-
-        return $this->pool;
+        return $this->pool ??= self::poolOver(new Stack());
     }
 
     protected function store(string $name, int $maxSize = 100_000, int $pollInterval = 500): Store&Appendable
