@@ -106,6 +106,31 @@ abstract class Base extends TestCase
         $this->assertSame(['a' => 'b'], $event->data);
     }
 
+    /**
+     * `source` records where an event happened, and a producer can only speak
+     * for itself — so an event relayed from another feed is republished as
+     * this service's event. Documented rather than merely tested, because a
+     * caller handing over a "prepared" event would reasonably expect it to be
+     * published as prepared.
+     */
+    public function testPublishReplacesTheCallersSourceWithTheProducersOwn(): void
+    {
+        $this->producer->publish(new CloudEvent(id: '', type: 'test', source: 'urn:somebody:else'));
+
+        $this->assertSame('urn:test', $this->events()[0]->source);
+    }
+
+    /**
+     * The stored form can only be decoded as CloudEvents 1.0, so keeping
+     * another version would leave an entry in the feed that nothing can read.
+     */
+    public function testPublishNormalisesTheSpecVersion(): void
+    {
+        $this->producer->publish(new CloudEvent(id: '', type: 'test', source: '', specversion: '1.1'));
+
+        $this->assertSame('1.0', $this->events()[0]->specversion);
+    }
+
     public function testPublishKeepsATimeTheCallerSet(): void
     {
         $this->producer->publish(new CloudEvent(id: '', type: 'test', source: '', time: '2020-01-01T00:00:00.000Z'));

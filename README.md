@@ -94,6 +94,16 @@ held at most 30s), and throws `Exception\Invalid` on a malformed `lastEventId`
 position in the feed. Subclass `Producer` to give callers a typed vocabulary
 instead of raw type strings.
 
+`publish()` takes a prepared `CloudEvent` for anything `produce()` cannot
+express — a `dataschema`, a `traceparent`, a non-JSON `datacontenttype`. Three
+attributes are the producer's rather than the caller's and are replaced
+whatever the event arrived with: `source` becomes the producer's own, `id` is
+assigned by the store (it is also the event's position, so only the store can
+order it), and a missing `time` is stamped as now. That matters most when
+relaying: an event received from another feed is republished as *this*
+service's event, so keep the original origin in an extension attribute if
+consumers need it.
+
 The `Batch` that `serve()` (and `Server::read()`/`poll()`) returns counts and
 iterates as its events; `cacheControl()` marks a full batch as immutable
 history and everything shorter `no-store`, using the limit the batch was
