@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "64da6e0642c2891229b50497a4cfef29",
+    "content-hash": "935a7e23baaac15e7abd66b7e9926cdb",
     "packages": [
         {
             "name": "brick/math",
@@ -2052,16 +2052,16 @@
         },
         {
             "name": "utopia-php/cloudevents",
-            "version": "dev-feat-constructor-validation",
+            "version": "0.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/utopia-php/cloudevents.git",
-                "reference": "8a89ab2365a70919f2e9a4c3742c28ac9020fb57"
+                "reference": "a1cd71180be54b73e7a16469a900dd85d993882d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/utopia-php/cloudevents/zipball/8a89ab2365a70919f2e9a4c3742c28ac9020fb57",
-                "reference": "8a89ab2365a70919f2e9a4c3742c28ac9020fb57",
+                "url": "https://api.github.com/repos/utopia-php/cloudevents/zipball/a1cd71180be54b73e7a16469a900dd85d993882d",
+                "reference": "a1cd71180be54b73e7a16469a900dd85d993882d",
                 "shasum": ""
             },
             "require": {
@@ -2098,9 +2098,9 @@
             ],
             "support": {
                 "issues": "https://github.com/utopia-php/cloudevents/issues",
-                "source": "https://github.com/utopia-php/cloudevents/tree/feat-constructor-validation"
+                "source": "https://github.com/utopia-php/cloudevents/tree/0.1.0"
             },
-            "time": "2026-07-30T11:07:39+00:00"
+            "time": "2026-07-31T10:57:20+00:00"
         },
         {
             "name": "utopia-php/pools",
@@ -4245,9 +4245,7 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "utopia-php/cloudevents": 20
-    },
+    "stability-flags": {},
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
