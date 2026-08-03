@@ -350,6 +350,51 @@ abstract class Base extends TestCase
         $this->assertSame('event-299', \end($types), 'The newest event is retained');
     }
 
+    /**
+     * Whether this adapter trims to exactly the cap. Redis does not — `XADD`
+     * with `~` trims to a node boundary, which is the whole reason the
+     * scenario above only asserts the loose bound.
+     */
+    protected function trimsExactly(): bool
+    {
+        return true;
+    }
+
+    /** An adapter that trims exactly owes the tighter contract: the bound is the cap itself. */
+    public function testRetentionTrimsToExactlyTheCap(): void
+    {
+        if (!$this->trimsExactly()) {
+            $this->markTestSkipped('This adapter trims approximately');
+        }
+
+        $store = $this->store($this->name, maxSize: 3);
+        $producer = new Producer($store, 'urn:test');
+
+        foreach (['a', 'b', 'c', 'd', 'e'] as $type) {
+            $producer->produce($type);
+        }
+
+        $this->assertSame(['c', 'd', 'e'], \array_map(fn (CloudEvent $e): string => $e->type, $store->read(null, 10)));
+    }
+
+    public function testAcceptsTheSmallestUsefulRetentionCap(): void
+    {
+        if (!$this->trimsExactly()) {
+            $this->markTestSkipped('This adapter trims approximately');
+        }
+
+        $store = $this->store($this->name, maxSize: 1);
+        $producer = new Producer($store, 'urn:test');
+
+        $producer->produce('a');
+        $producer->produce('b');
+
+        $events = $store->read(null, 10);
+
+        $this->assertCount(1, $events);
+        $this->assertSame('b', $events[0]->type);
+    }
+
     public function testRejectsAnEmptyFeedName(): void
     {
         $this->expectException(Invalid::class);

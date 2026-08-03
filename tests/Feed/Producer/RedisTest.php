@@ -18,6 +18,12 @@ class RedisTest extends Base
 {
     use UsesRedis;
 
+    /** `XADD ... MAXLEN ~` trims to a node boundary, not to the cap. */
+    protected function trimsExactly(): bool
+    {
+        return false;
+    }
+
     /**
      * The wire format other tools rely on: `GET`-able keys named after the
      * feed, holding a plain Redis stream — which is what lets an operator
