@@ -19,6 +19,12 @@ class Redis extends Cursor
             /** @var mixed $cursor */
             $cursor = $this->redis->get($this->key($feed, $consumer));
         } catch (\RedisException $error) {
+            // A key left in another format holds no readable position; the
+            // next save() overwrites it.
+            if (\str_contains($error->getMessage(), 'WRONGTYPE')) {
+                return null;
+            }
+
             throw new Transport("Failed to load the {$consumer} cursor: {$error->getMessage()}", previous: $error);
         }
 
