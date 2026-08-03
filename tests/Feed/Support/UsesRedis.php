@@ -30,6 +30,22 @@ trait UsesRedis
         return $this->redis;
     }
 
+    /**
+     * A client that cannot reach a server, for the error contract.
+     *
+     * Every command on one raises `\RedisException` from the extension itself,
+     * so the wrapping runs for real rather than against a double that throws
+     * on cue. Closing a connected client would not do: phpredis reconnects
+     * transparently on the next command.
+     *
+     * It is also a real misconfiguration — a client handed to a store before
+     * anything connected it — rather than a state only a test can produce.
+     */
+    protected static function unreachableRedis(): \Redis
+    {
+        return new \Redis();
+    }
+
     protected function store(string $name, int $maxSize = 100_000, int $pollInterval = 500): Store&Appendable
     {
         return new RedisStore($this->redis(), $name, $maxSize, $pollInterval);

@@ -4,7 +4,14 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Producer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use Utopia\CloudEvents\CloudEvent;
+use Utopia\Feed\Appendable;
+use Utopia\Feed\Exception\Transport;
+use Utopia\Feed\Key;
 use Utopia\Feed\Producer;
+use Utopia\Feed\Store;
+use Utopia\Feed\Store\Redis as RedisStore;
 use Utopia\Tests\Support\UsesRedis;
 
 class RedisTest extends Base
@@ -54,5 +61,73 @@ class RedisTest extends Base
         }
 
         $this->assertLessThan(300, $this->redis()->xLen('feed:' . $this->name), 'The stream must be trimmed');
+    }
+
+    /**
+     * The README promises `Transport` when "the backend or network failed:
+     * Redis errors, HTTP failures". The HTTP half of that promise is tested
+     * thoroughly; the Redis half — the flagship production adapter — was not
+     * tested at all, so a regression letting a raw `\RedisException` out would
+     * have shipped green and crashed every consumer catching
+     * `Utopia\Feed\Exception` per the README.
+     *
+     * @param callable(Store&Appendable): void $operation
+     */
+    #[DataProvider('operations')]
+    public function testABackendThatCannotBeReachedRaisesTransport(callable $operation): void
+    {
+        $store = new RedisStore(self::unreachableRedis(), $this->name);
+
+        $this->expectException(Transport::class);
+
+        $operation($store);
+    }
+
+    /**
+     * @return array<string, array{callable(Store&Appendable): void}>
+     */
+    public static function operations(): array
+    {
+        return [
+            'read' => [static function (Store&Appendable $store): void {
+                $store->read(null, 10);
+            }],
+            'tip' => [static function (Store&Appendable $store): void {
+                $store->tip();
+            }],
+            'append' => [static function (Store&Appendable $store): void {
+                $store->append(new CloudEvent(id: '', type: 'test', source: 'urn:test'));
+            }],
+        ];
+    }
+
+    /**
+     * A foreign value under the feed's key — someone else's key collision, or
+     * a leftover from another tool — makes Redis answer every stream command
+     * with an error rather than raising. Appending must not report a position
+     * for an event that is not in the feed, so the reply is checked rather
+     * than trusted.
+     */
+    public function testAppendingOverAForeignValueRaisesTransport(): void
+    {
+        $this->redis()->set(Key::feed($this->name), 'not a stream');
+
+        $this->expectException(Transport::class);
+
+        $this->store->append(new CloudEvent(id: '', type: 'test', source: 'urn:test'));
+    }
+
+    /**
+     * Reading past the same value is the opposite call: a feed nobody can read
+     * is an empty feed — a replay at worst — and failing the read instead
+     * would stall every consumer of it. Same policy the cache store applies to
+     * a foreign value under its key.
+     */
+    public function testReadingPastAForeignValueIsAnEmptyFeed(): void
+    {
+        $this->redis()->set(Key::feed($this->name), 'not a stream');
+
+        $this->assertSame([], $this->store->read(null, 10));
+        $this->assertNull($this->store->tip());
     }
 }
