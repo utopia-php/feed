@@ -1,6 +1,9 @@
 name: "Linter"
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   lint:
@@ -11,7 +14,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Run Linter
+      # Run against the test image rather than a bare composer container, as
+      # the analysis job does: the codebase uses PHP 8.5 syntax that pint can
+      # only parse on a new enough runtime, and whatever version `composer:latest`
+      # happens to ship would otherwise be an unstated build dependency.
+      - name: Build
         run: |
-          docker run --rm -v $PWD:/app composer sh -c \
-          "composer install --profile --ignore-platform-reqs && composer lint"
+          docker compose build tests
+          docker compose up -d tests
+
+      - name: Run Linter
+        run: docker compose exec -T tests composer lint
