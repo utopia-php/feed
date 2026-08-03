@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Consumer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Utopia\Client\Adapter;
 use Utopia\CloudEvents\CloudEvent;
@@ -515,9 +516,7 @@ abstract class Base extends TestCase
         $this->assertSame($first, $consumer->position());
     }
 
-    /**
-     * @dataProvider noPositions
-     */
+    #[DataProvider('noPositions')]
     public function testSeekRejectsAnIdNoFeedCouldUse(string $id): void
     {
         $this->assertSeekRejected($id);
@@ -538,9 +537,7 @@ abstract class Base extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider notPositions
-     */
+    #[DataProvider('notPositions')]
     public function testSeekRejectsAnIdThatIsNotAPosition(string $id): void
     {
         if (!$this->ownsItsIdFormat()) {

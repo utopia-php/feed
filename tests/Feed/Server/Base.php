@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Server;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Appendable;
@@ -268,9 +269,8 @@ abstract class Base extends TestCase
      * a malformed parameter with a full replay of the retained feed — the
      * most expensive response the endpoint has, and one a caught-up consumer
      * would read as a sudden flood of new events rather than as the 400 it is.
-     *
-     * @dataProvider notStrings
      */
+    #[DataProvider('notStrings')]
     public function testServeRejectsALastEventIdThatIsNotEvenAString(mixed $lastEventId): void
     {
         $this->producer->produce('a');

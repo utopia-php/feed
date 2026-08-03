@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Key;
 
@@ -71,9 +72,7 @@ class KeyTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider names
-     */
+    #[DataProvider('names')]
     public function testEveryNameKeepsItsOwnKeys(string $name): void
     {
         $others = \array_column(self::names(), 0);

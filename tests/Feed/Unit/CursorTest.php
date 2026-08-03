@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Utopia\Cache\Cache as UtopiaCache;
 use Utopia\CloudEvents\CloudEvent;
@@ -57,9 +58,7 @@ class CursorTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider unusableNames
-     */
+    #[DataProvider('unusableNames')]
     public function testTheNoneStoreStillRejectsEmptyNames(string $feed, string $consumer): void
     {
         $this->expectException(Invalid::class);
@@ -128,9 +127,9 @@ class CursorTest extends TestCase
      * canonical consume loop retrying on Transport crashes on a backend blip
      * instead, which is what the Transport contract exists to prevent.
      *
-     * @dataProvider operations
      * @param callable(Cursor): void $operation
      */
+    #[DataProvider('operations')]
     public function testABackendThatIsDownRaisesTransport(callable $operation): void
     {
         $cursor = new CacheCursor(new UtopiaCache(new BrokenCache(raises: true)));
@@ -162,9 +161,8 @@ class CursorTest extends TestCase
      * An unusable name is the caller's bug, not the backend's failure, and it
      * stays Invalid even when the backend behind the cursor is also down —
      * otherwise wrapping the store call would swallow the distinction.
-     *
-     * @dataProvider unusableNames
      */
+    #[DataProvider('unusableNames')]
     public function testAnUnusableNameIsStillInvalidOnABackendThatIsDown(string $feed, string $consumer): void
     {
         $cursor = new CacheCursor(new UtopiaCache(new BrokenCache(raises: true)));

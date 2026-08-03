@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Producer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Appendable;
@@ -183,9 +184,8 @@ abstract class Base extends TestCase
     /**
      * The JSON event format leaves `data` unrestricted, so a list or a scalar
      * has to survive as itself — a list must not come back as a map.
-     *
-     * @dataProvider payloads
      */
+    #[DataProvider('payloads')]
     public function testAnyJsonPayloadSurvivesTheRoundTrip(mixed $data): void
     {
         $this->producer->produce('test', $data);
@@ -356,9 +356,7 @@ abstract class Base extends TestCase
         $this->store('');
     }
 
-    /**
-     * @dataProvider notRetentions
-     */
+    #[DataProvider('notRetentions')]
     public function testRejectsARetentionThatKeepsNothing(int $maxSize): void
     {
         $this->expectException(Invalid::class);
@@ -377,9 +375,7 @@ abstract class Base extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider notIntervals
-     */
+    #[DataProvider('notIntervals')]
     public function testRejectsAPollIntervalBelowAMillisecond(int $pollInterval): void
     {
         $this->expectException(Invalid::class);

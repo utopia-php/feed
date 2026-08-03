@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Producer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Utopia\Cache\Cache as UtopiaCache;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Appendable;
@@ -160,9 +161,9 @@ class CacheTest extends Base
      * and would crash on a backend blip instead — the exact failure mode the
      * Transport contract exists to prevent.
      *
-     * @dataProvider operations
      * @param callable(Store&Appendable): void $operation
      */
+    #[DataProvider('operations')]
     public function testABackendThatIsDownRaisesTransport(callable $operation): void
     {
         $store = $this->unreachable();

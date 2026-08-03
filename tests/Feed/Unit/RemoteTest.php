@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Utopia\Client;
@@ -272,9 +273,9 @@ class RemoteTest extends TestCase
      * endpoint that moved. Reading one as an empty batch would leave a
      * consumer sitting quietly at a position that never advances again.
      *
-     * @dataProvider notBatches
      * @param array<array-key, mixed> $payload
      */
+    #[DataProvider('notBatches')]
     public function testARespondingEndpointThatIsNotAFeedIsNotMistakenForBeingCaughtUp(array $payload): void
     {
         [$remote] = $this->remote([FakeTransport::json($payload)]);

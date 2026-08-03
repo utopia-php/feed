@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Utopia\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Utopia\Feed\Exception\Invalid;
 use Utopia\Feed\Id;
@@ -30,9 +31,7 @@ class IdTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider ids
-     */
+    #[DataProvider('ids')]
     public function testValidatesIds(string $id, bool $valid): void
     {
         $this->assertSame($valid, Id::isValid($id));
