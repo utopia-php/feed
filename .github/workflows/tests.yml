@@ -1,0 +1,54 @@
+name: "Tests"
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    name: "PHP ${{ matrix.php-versions }} · ${{ matrix.suite }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Add a PHP version here and nowhere else — the image is built from one
+        # parameterized Dockerfile.
+        php-versions: ['8.5']
+        # One job per adapter: each runs the same behaviour scenarios
+        # (tests/Feed/*/Base.php), so a green suite means that adapter honours
+        # the whole contract. See phpunit.xml for what each suite contains.
+        suite: [unit, memory, cache, http, redis, pool]
+
+    env:
+      PHP_VERSION: ${{ matrix.php-versions }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build
+        run: |
+          docker compose build
+          docker compose up -d
+
+      - name: Run ${{ matrix.suite }} tests
+        run: docker compose exec -T tests vendor/bin/phpunit --testsuite ${{ matrix.suite }}
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build
+        run: |
+          docker compose build
+          docker compose up -d
+
+      # Every suite, so the Redis and pooled adapters count too. No threshold
+      # yet — the number is there to be read.
+      - name: Report coverage
+        run: docker compose exec -T tests composer coverage:all

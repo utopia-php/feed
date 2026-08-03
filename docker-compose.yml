@@ -1,0 +1,39 @@
+name: feed
+
+services:
+  tests:
+    container_name: feed-tests
+    image: feed-tests:${PHP_VERSION:-8.5}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.5}
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - feed
+    volumes:
+      - ./phpunit.xml:/code/phpunit.xml
+      - ./phpstan.neon:/code/phpstan.neon
+      - ./pint.json:/code/pint.json
+      - ./src:/code/src
+      - ./tests:/code/tests
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: feed-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    networks:
+      - feed
+
+networks:
+  feed:

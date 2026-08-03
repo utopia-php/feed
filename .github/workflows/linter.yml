@@ -1,0 +1,25 @@
+name: "Linter"
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Linter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # The project's own image, as the analysis job uses: pint needs a PHP
+      # new enough to parse 8.5 syntax, which `composer:latest` does not pin.
+      - name: Build
+        run: |
+          docker compose build tests
+          docker compose up -d tests
+
+      - name: Run Linter
+        run: docker compose exec -T tests composer lint

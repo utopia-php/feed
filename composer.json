@@ -1,0 +1,68 @@
+{
+    "name": "utopia-php/feed",
+    "description": "A simple library for publishing and consuming pull-based HTTP event feeds",
+    "type": "library",
+    "keywords": [
+        "php",
+        "framework",
+        "upf",
+        "utopia",
+        "feed",
+        "http-feeds",
+        "cloudevents",
+        "events",
+        "streams"
+    ],
+    "license": "MIT",
+    "minimum-stability": "stable",
+    "scripts": {
+        "test": "vendor/bin/phpunit --testsuite unit,memory,cache,http",
+        "test:unit": "vendor/bin/phpunit --testsuite unit",
+        "test:memory": "vendor/bin/phpunit --testsuite memory",
+        "test:cache": "vendor/bin/phpunit --testsuite cache",
+        "test:http": "vendor/bin/phpunit --testsuite http",
+        "test:redis": "vendor/bin/phpunit --testsuite redis",
+        "test:pool": "vendor/bin/phpunit --testsuite pool",
+        "coverage": "php -d pcov.enabled=1 -d pcov.directory=src vendor/bin/phpunit --testsuite unit,memory,cache,http --coverage-text --coverage-clover coverage.xml",
+        "coverage:all": "php -d pcov.enabled=1 -d pcov.directory=src vendor/bin/phpunit --testsuite unit,memory,cache,http,redis,pool --coverage-text --coverage-clover coverage.xml",
+        "check": "vendor/bin/phpstan analyse --memory-limit=1G",
+        "lint": "vendor/bin/pint --test",
+        "format": "vendor/bin/pint"
+    },
+    "autoload": {
+        "psr-4": {
+            "Utopia\\Feed\\": "src/Feed"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Utopia\\Tests\\": "tests/Feed"
+        }
+    },
+    "require": {
+        "php": ">=8.5",
+        "ext-json": "*",
+        "psr/http-client": "^1.0",
+        "psr/http-message": "^2.0",
+        "utopia-php/cache": "3.*",
+        "utopia-php/client": "^0.2",
+        "utopia-php/pools": "1.*",
+        "utopia-php/psr7": "^0.2",
+        "utopia-php/cloudevents": "0.1.*"
+    },
+    "suggest": {
+        "ext-redis": "Required by the Store\\Redis, Store\\Pool, Cursor\\Redis and Cursor\\Pool adapters. The other adapters, and consuming a feed over HTTP, work without it"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.21",
+        "phpstan/phpstan": "^2.2",
+        "phpunit/phpunit": "^13.0",
+        "swoole/ide-helper": "^6.0"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true,
+            "tbachert/spi": true
+        }
+    }
+}

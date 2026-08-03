@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         cacheDirectory=".phpunit.cache"
+         backupGlobals="false"
+         backupStaticProperties="false"
+         colors="true"
+         processIsolation="false"
+         stopOnFailure="false"
+        >
+    <!--
+        One suite per adapter: every adapter runs the same behaviour scenarios
+        (tests/Feed/{Producer,Consumer,Server}/Base.php), so a suite passing
+        means that adapter honours the whole contract. `unit` needs no
+        services; `redis` and `pool` need the compose Redis.
+    -->
+    <!-- Scoped to src/, so a report measures the library, not its fixtures. -->
+    <source>
+        <include>
+            <directory suffix=".php">./src</directory>
+        </include>
+    </source>
+
+    <testsuites>
+        <testsuite name="unit">
+            <directory>./tests/Feed/Unit</directory>
+        </testsuite>
+        <testsuite name="memory">
+            <file>./tests/Feed/Producer/MemoryTest.php</file>
+            <file>./tests/Feed/Server/MemoryTest.php</file>
+            <file>./tests/Feed/Consumer/MemoryTest.php</file>
+            <file>./tests/Feed/Cursor/MemoryTest.php</file>
+        </testsuite>
+        <testsuite name="cache">
+            <file>./tests/Feed/Producer/CacheTest.php</file>
+            <file>./tests/Feed/Server/CacheTest.php</file>
+            <file>./tests/Feed/Consumer/CacheTest.php</file>
+            <file>./tests/Feed/Cursor/CacheTest.php</file>
+        </testsuite>
+        <testsuite name="http">
+            <file>./tests/Feed/Consumer/HttpTest.php</file>
+        </testsuite>
+        <testsuite name="redis">
+            <file>./tests/Feed/Producer/RedisTest.php</file>
+            <file>./tests/Feed/Server/RedisTest.php</file>
+            <file>./tests/Feed/Consumer/RedisTest.php</file>
+            <file>./tests/Feed/Cursor/RedisTest.php</file>
+        </testsuite>
+        <testsuite name="pool">
+            <file>./tests/Feed/Producer/PoolTest.php</file>
+            <file>./tests/Feed/Server/PoolTest.php</file>
+            <file>./tests/Feed/Consumer/PoolTest.php</file>
+            <file>./tests/Feed/Cursor/PoolTest.php</file>
+        </testsuite>
+    </testsuites>
+</phpunit>
