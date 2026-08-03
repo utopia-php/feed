@@ -24,7 +24,8 @@ abstract class Cursor
     abstract public function reset(string $feed, string $consumer): void;
 
     /**
-     * The one place a cursor key is shaped, so every store agrees on it.
+     * The gate every cursor operation goes through, so no adapter can build a
+     * key of its own and skip the check or diverge from the layout.
      *
      * @throws Invalid When either name is empty.
      */
@@ -34,6 +35,6 @@ abstract class Cursor
             throw new Invalid('Cursor requires a feed and a consumer name');
         }
 
-        return 'feed:' . $feed . ':cursor:' . $consumer;
+        return Key::cursor($feed, $consumer);
     }
 }

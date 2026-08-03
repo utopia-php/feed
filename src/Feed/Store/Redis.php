@@ -24,7 +24,7 @@ class Redis extends Store implements Appendable
     public function append(CloudEvent $event): string
     {
         try {
-            $id = $this->redis->xAdd('feed:' . $this->name, '*', self::encode($event), $this->maxSize, true);
+            $id = $this->redis->xAdd($this->key(), '*', self::encode($event), $this->maxSize, true);
         } catch (\RedisException $error) {
             throw new Transport("Failed to append to the {$this->name} feed: {$error->getMessage()}", previous: $error);
         }
@@ -39,7 +39,7 @@ class Redis extends Store implements Appendable
     public function tip(): ?string
     {
         try {
-            $entries = $this->redis->xRevRange('feed:' . $this->name, '+', '-', 1);
+            $entries = $this->redis->xRevRange($this->key(), '+', '-', 1);
         } catch (\RedisException $error) {
             throw new Transport("Failed to read the {$this->name} feed: {$error->getMessage()}", previous: $error);
         }
@@ -58,7 +58,7 @@ class Redis extends Store implements Appendable
         $start = $lastEventId === null ? '-' : Id::after($lastEventId);
 
         try {
-            $entries = $this->redis->xRange('feed:' . $this->name, $start, '+', $limit);
+            $entries = $this->redis->xRange($this->key(), $start, '+', $limit);
         } catch (\RedisException $error) {
             throw new Transport("Failed to read the {$this->name} feed: {$error->getMessage()}", previous: $error);
         }

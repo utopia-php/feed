@@ -35,6 +35,12 @@ abstract class Store implements Readable
         return $this->name;
     }
 
+    /** The backend key this feed's events live under. */
+    protected function key(): string
+    {
+        return Key::feed($this->name);
+    }
+
     /** @return list<CloudEvent> */
     abstract public function read(?string $lastEventId, int $limit): array;
 

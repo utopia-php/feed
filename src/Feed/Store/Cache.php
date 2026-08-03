@@ -121,9 +121,4 @@ class Cache extends Store implements Appendable
 
         return $entries;
     }
-
-    private function key(): string
-    {
-        return 'feed:' . $this->name;
-    }
 }
