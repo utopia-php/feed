@@ -18,11 +18,11 @@ class Cache extends Store implements Appendable
     public function __construct(
         protected readonly UtopiaCache $cache,
         string $name,
-        protected readonly int $maxSize = 100_000,
+        int $maxSize = self::MAX_SIZE,
         protected readonly int $ttl = self::TTL,
         int $pollInterval = self::POLL_INTERVAL,
     ) {
-        parent::__construct($name, $pollInterval);
+        parent::__construct($name, $maxSize, $pollInterval);
     }
 
     public function append(CloudEvent $event): string

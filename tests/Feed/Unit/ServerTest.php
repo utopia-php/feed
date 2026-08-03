@@ -307,6 +307,27 @@ class ServerTest extends TestCase
         new Memory('edge', pollInterval: -5);
     }
 
+    /**
+     * @dataProvider notRetentions
+     */
+    public function testRejectsARetentionThatKeepsNothing(int $maxSize): void
+    {
+        $this->expectException(Invalid::class);
+
+        new Memory('edge', maxSize: $maxSize);
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function notRetentions(): array
+    {
+        return [
+            'zero' => [0],
+            'negative' => [-5],
+        ];
+    }
+
     public function testRetentionIsBoundedAndTrimsTheOldest(): void
     {
         $store = new Memory('small', maxSize: 3);

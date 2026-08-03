@@ -9,14 +9,20 @@ use Utopia\Feed\Exception\Invalid;
 
 abstract class Store implements Readable
 {
+    protected const int MAX_SIZE = 100_000; // entries
     protected const int POLL_INTERVAL = 500; // ms
 
     public function __construct(
         protected readonly string $name,
+        protected readonly int $maxSize = self::MAX_SIZE,
         protected readonly int $pollInterval = self::POLL_INTERVAL,
     ) {
         if ($name === '') {
             throw new Invalid('Feed name is required');
+        }
+
+        if ($maxSize < 1) {
+            throw new Invalid('Feed retention must be at least 1 event');
         }
 
         if ($pollInterval < 1) {

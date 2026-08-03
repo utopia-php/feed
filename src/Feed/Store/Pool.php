@@ -17,10 +17,10 @@ class Pool extends Store implements Appendable
     public function __construct(
         protected readonly UtopiaPool $pool,
         string $name,
-        protected readonly int $maxSize = 100_000,
+        int $maxSize = self::MAX_SIZE,
         int $pollInterval = self::POLL_INTERVAL,
     ) {
-        parent::__construct($name, $pollInterval);
+        parent::__construct($name, $maxSize, $pollInterval);
     }
 
     private function inner(\Redis|\RedisCluster $redis): Redis

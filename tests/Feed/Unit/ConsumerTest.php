@@ -485,6 +485,43 @@ class ConsumerTest extends TestCase
     }
 
     /**
+     * A hand-made move decided during a run is the newer decision, so the run
+     * must not save its own progress over it on the way out.
+     */
+    public function testASeekMadeInsideAHandlerIsNotOverwritten(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+        $third = $this->producer->produce('c');
+
+        $consumer = $this->consumer(batch: 1);
+        $consumer->consume(function (CloudEvent $event) use ($consumer, $third): void {
+            $consumer->seek($third);
+        });
+
+        $this->assertSame($third, $consumer->position());
+        $this->assertSame($third, $this->cursor->load('edge', 'invalidator'));
+        $this->assertSame([], $this->drain($consumer), 'The run resumes after the seeked id, not after the handled one');
+    }
+
+    public function testAResetMadeInsideAHandlerIsNotOverwritten(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $consumer = $this->consumer();
+        $consumer->consume(function (CloudEvent $event) use ($consumer): void {
+            if ($event->type === 'b') {
+                $consumer->reset();
+            }
+        });
+
+        $this->assertNull($consumer->position());
+        $this->assertNull($this->cursor->load('edge', 'invalidator'));
+        $this->assertSame(['a', 'b'], $this->drain($consumer), 'The reset stands, so everything retained replays');
+    }
+
+    /**
      * @dataProvider notPositions
      */
     public function testSeekRejectsAnIdThatIsNotAPosition(string $id): void

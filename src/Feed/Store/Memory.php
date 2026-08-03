@@ -19,10 +19,10 @@ class Memory extends Store implements Appendable
 
     public function __construct(
         string $name,
-        protected readonly int $maxSize = 100_000,
+        int $maxSize = self::MAX_SIZE,
         int $pollInterval = self::POLL_INTERVAL,
     ) {
-        parent::__construct($name, $pollInterval);
+        parent::__construct($name, $maxSize, $pollInterval);
     }
 
     public function append(CloudEvent $event): string

@@ -174,6 +174,10 @@ fails with a 4xx `Transport` error rather than silently replaying the backlog.
   as `Transport`. The id must be well formed but need not still exist in the
   feed.
 
+Either is safe to call from inside a handler: a run that finishes after the
+move keeps its own progress to itself rather than saving over the newer
+decision.
+
 `seek()` is the escape hatch for a poison event. A handler that keeps failing
 blocks the feed by design, so stepping past it is a decision made in code:
 catch the failure, log the event's id, and once you have decided the event
@@ -213,7 +217,9 @@ consumer opted into `Consumer::START_TIP`), so a consumer deployed after the pro
 drains the backlog instead of dropping it.
 
 **One process per consumer name.** Two processes sharing a name share one
-position, so the feed is split between them rather than delivered to both.
+position, so the feed is split between them rather than delivered to both —
+and because each save is last-writer-wins, the shared position can also move
+backwards and replay. Give every consumer its own name.
 
 ## Reference
 
@@ -222,7 +228,9 @@ position, so the feed is split between them rather than delivered to both.
 Every store is `Readable` and `Appendable` — it owns its events and assigns
 their ids. All take `maxSize` (retention, ~100,000 entries by default) and
 `pollInterval` (how often a held poll re-reads, 500 ms by default — shorter
-lowers long-poll latency, raises backend reads).
+lowers long-poll latency, raises backend reads). Neither may be below 1 — a
+store that retains nothing is a misconfiguration, so the constructor throws
+`Exception\Invalid`.
 
 | Store | Use for |
 | --- | --- |

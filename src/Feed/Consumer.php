@@ -20,6 +20,9 @@ class Consumer
 
     private bool $restored = false;
 
+    /** Bumped by every hand-made move, so a run never saves over one. */
+    private int $moved = 0;
+
     /**
      * @throws Exception\Invalid When a name is missing, $feed contradicts the source, or $start is not a START_* constant.
      */
@@ -58,6 +61,8 @@ class Consumer
 
     public function consume(callable $handler): int
     {
+        $moved = $this->moved;
+
         $events = $this->feed->poll(
             $this->position() ?? $this->origin(),
             \max(1, \min($this->batch, Readable::MAX_BATCH)),
@@ -84,7 +89,7 @@ class Consumer
             $handled++;
         }
 
-        if ($processed !== null) {
+        if ($processed !== null && $this->moved === $moved) {
             $this->position = $processed;
             $this->cursor->save($this->feed->getName(), $this->name, $processed);
         }
@@ -125,6 +130,7 @@ class Consumer
 
         $this->position = $eventId;
         $this->restored = true;
+        $this->moved++;
     }
 
     public function reset(): void
@@ -133,5 +139,6 @@ class Consumer
 
         $this->position = null;
         $this->restored = true;
+        $this->moved++;
     }
 }

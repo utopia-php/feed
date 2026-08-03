@@ -15,10 +15,10 @@ class Redis extends Store implements Appendable
     public function __construct(
         protected readonly \Redis|\RedisCluster $redis,
         string $name,
-        protected readonly int $maxSize = 100_000,
+        int $maxSize = self::MAX_SIZE,
         int $pollInterval = self::POLL_INTERVAL,
     ) {
-        parent::__construct($name, $pollInterval);
+        parent::__construct($name, $maxSize, $pollInterval);
     }
 
     public function append(CloudEvent $event): string
