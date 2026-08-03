@@ -4,7 +4,7 @@ on: [pull_request]
 
 jobs:
   tests:
-    name: "PHP ${{ matrix.php-versions }}"
+    name: "PHP ${{ matrix.php-versions }} · ${{ matrix.suite }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -12,6 +12,10 @@ jobs:
         # Add a PHP version here and nowhere else — the image is built from one
         # parameterized Dockerfile.
         php-versions: ['8.5']
+        # One job per adapter: each runs the same behaviour scenarios
+        # (tests/Feed/*/Base.php), so a green suite means that adapter honours
+        # the whole contract. See phpunit.xml for what each suite contains.
+        suite: [unit, memory, cache, http, redis, pool]
 
     env:
       PHP_VERSION: ${{ matrix.php-versions }}
@@ -25,8 +29,5 @@ jobs:
           docker compose build
           docker compose up -d
 
-      - name: Unit tests
-        run: docker compose exec -T tests vendor/bin/phpunit --testsuite unit
-
-      - name: E2E tests
-        run: docker compose exec -T tests vendor/bin/phpunit --testsuite e2e
+      - name: Run ${{ matrix.suite }} tests
+        run: docker compose exec -T tests vendor/bin/phpunit --testsuite ${{ matrix.suite }}

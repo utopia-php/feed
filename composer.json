@@ -16,8 +16,13 @@
     "license": "MIT",
     "minimum-stability": "stable",
     "scripts": {
-        "test": "vendor/bin/phpunit --testsuite unit",
-        "test:e2e": "vendor/bin/phpunit --testsuite e2e",
+        "test": "vendor/bin/phpunit --testsuite unit,memory,cache,http",
+        "test:unit": "vendor/bin/phpunit --testsuite unit",
+        "test:memory": "vendor/bin/phpunit --testsuite memory",
+        "test:cache": "vendor/bin/phpunit --testsuite cache",
+        "test:http": "vendor/bin/phpunit --testsuite http",
+        "test:redis": "vendor/bin/phpunit --testsuite redis",
+        "test:pool": "vendor/bin/phpunit --testsuite pool",
         "check": "vendor/bin/phpstan analyse --memory-limit=1G",
         "lint": "vendor/bin/pint --test",
         "format": "vendor/bin/pint"

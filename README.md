@@ -332,23 +332,36 @@ builds over its client. Services never need any of them directly.
 
 ## Tests
 
-Unit tests need no services, but dependencies declare extensions the suite
-never touches (`ext-redis`, `ext-memcached`, `ext-protobuf`), so install past
-them:
+The suite is organized around behaviour, not classes: each component has one
+abstract scenario suite — `tests/Feed/Producer/Base.php`,
+`tests/Feed/Server/Base.php`, `tests/Feed/Consumer/Base.php` — and every
+adapter extends it, so a passing adapter suite means that adapter honours the
+whole contract. Producer and Server run per store (`memory`, `cache`, `redis`,
+`pool`); Consumer runs per cursor plus once through the real HTTP wire code
+(`http`). What remains in `tests/Feed/Unit` are the cases only a fake can
+provoke: a cursor store that is down, a body that is not a batch, a backend
+that was never configured.
+
+The service-free suites need no Redis, but dependencies declare extensions the
+suites never touch (`ext-redis`, `ext-memcached`, `ext-protobuf`), so install
+past them:
 
 ```bash
 composer install --ignore-platform-reqs
-composer test
+composer test          # unit + memory + cache + http
 ```
 
-The E2E suite runs against a real Redis, and static analysis needs `ext-redis`,
-so both run in the container:
+The `redis` and `pool` suites run the same scenarios against a real Redis, and
+static analysis needs `ext-redis`, so both run in the container:
 
 ```bash
 docker compose up -d
-docker compose exec tests composer test:e2e
+docker compose exec tests composer test:redis
+docker compose exec tests composer test:pool
 docker compose exec tests composer check
 ```
+
+CI runs every suite as its own job, so a failing adapter is visible by name.
 
 To test another PHP version, build with `PHP_VERSION=8.6 docker compose build`,
 and add it to the `php-versions` matrix in `.github/workflows/tests.yml`.
