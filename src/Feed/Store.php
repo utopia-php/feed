@@ -67,13 +67,25 @@ abstract class Store implements Readable
         }
     }
 
-    /** @return array<string, string> */
+    /**
+     * Every attribute a CloudEvent carries, flattened to strings.
+     *
+     * `specversion` is not among them: it is restored as `1.0` because that is
+     * the only version {@see CloudEvent::fromArray()} accepts, so storing
+     * another one would make the entry permanently unreadable. `id` is not
+     * either — the store assigns it and hands it back to {@see self::decode()}.
+     * An empty string stands for an absent optional attribute; the spec has no
+     * null attribute values, so it cannot collide with a real one.
+     *
+     * @return array<string, string>
+     */
     protected static function encode(CloudEvent $event): array
     {
         return [
             'type' => $event->type,
             'source' => $event->source,
             'subject' => $event->subject ?? '',
+            'datacontenttype' => $event->datacontenttype ?? '',
             'dataschema' => $event->dataschema ?? '',
             'time' => $event->time ?? '',
             'data' => self::json($event->data, 'data'),
@@ -94,7 +106,7 @@ abstract class Store implements Readable
             'data' => \json_decode(self::field($fields, 'data'), true),
         ];
 
-        foreach (['subject', 'dataschema', 'time'] as $optional) {
+        foreach (['subject', 'datacontenttype', 'dataschema', 'time'] as $optional) {
             $value = self::field($fields, $optional);
 
             if ($value !== '') {

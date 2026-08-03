@@ -211,6 +211,41 @@ abstract class Base extends TestCase
         $this->assertSame('ok', $event->extensions['trace']);
     }
 
+    /**
+     * A producer that encodes its payload as something other than JSON says so
+     * with `datacontenttype`, and losing it leaves a consumer holding data it
+     * can no longer interpret. Nothing about the flattening the store does is
+     * visible to the caller, so only a round trip can show the attribute made
+     * it through.
+     */
+    public function testDatacontenttypeSurvivesAppendAndRead(): void
+    {
+        $this->producer->publish(new CloudEvent(
+            id: '',
+            type: 'test',
+            source: '',
+            datacontenttype: 'application/xml',
+            data: '<invalidate/>',
+        ));
+
+        $event = $this->events()[0];
+
+        $this->assertSame('application/xml', $event->datacontenttype);
+        $this->assertSame('<invalidate/>', $event->data);
+    }
+
+    /**
+     * CloudEvents treats an absent `datacontenttype` as meaning the data is
+     * JSON, so "unset" has to come back unset rather than as the empty string
+     * the store flattens it to.
+     */
+    public function testAnEventWithNoDatacontenttypeReadsBackWithNone(): void
+    {
+        $this->producer->publish(new CloudEvent(id: '', type: 'test', source: '', datacontenttype: null));
+
+        $this->assertNull($this->events()[0]->datacontenttype);
+    }
+
     public function testDataschemaSurvivesAppendAndRead(): void
     {
         $this->producer->publish(new CloudEvent(
