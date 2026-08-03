@@ -315,6 +315,23 @@ abstract class Base extends TestCase
         $this->assertCount(0, $this->server->serve(['lastEventId' => Readable::TIP]));
     }
 
+    /**
+     * The long-poll contract has to hold through the HTTP entry point, not
+     * only through `poll()`. A refactor that stopped forwarding the timeout
+     * would turn every long poll into a plain read — consumers would spin
+     * instead of waiting, and nothing that asserts on returned events could
+     * tell, because a caught-up read returns the same empty batch either way.
+     */
+    public function testServeHoldsALongPollOnAnEmptyFeed(): void
+    {
+        $started = \microtime(true);
+
+        $batch = $this->server->serve(['timeout' => '600']);
+
+        $this->assertCount(0, $batch);
+        $this->assertGreaterThanOrEqual(0.4, \microtime(true) - $started, 'Must actually wait');
+    }
+
     public function testServeFallsBackToTheDefaultOnAGarbageLimit(): void
     {
         $this->producer->produce('a');
