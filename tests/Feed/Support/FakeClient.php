@@ -44,6 +44,7 @@ abstract class FakeClient implements ClientAdapter
             'timeout' => $this->timeout,
             'status' => $response->getStatusCode(),
             'cacheControl' => $response->getHeaderLine(Header::CACHE_CONTROL),
+            'contentType' => $response->getHeaderLine(Header::CONTENT_TYPE),
         ];
 
         return $response;

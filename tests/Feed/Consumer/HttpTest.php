@@ -8,8 +8,10 @@ use Utopia\Client\Adapter;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Appendable;
 use Utopia\Feed\Consumer;
+use Utopia\Feed\Exception\Transport;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Readable;
+use Utopia\Feed\Remote;
 use Utopia\Feed\Server;
 use Utopia\Feed\Store;
 use Utopia\Tests\Support\FeedServer;
@@ -57,6 +59,64 @@ class HttpTest extends Base
 
         $this->assertSame($opaque, $consumer->position());
         $this->assertSame($opaque, $this->cursor->load($this->name, 'invalidator'), 'And it is persisted, so a restart resumes from it');
+    }
+
+    /**
+     * The feed name is the one thing on the wire only the serving side can
+     * check. `Remote` encodes it into the request path, and the consumer's own
+     * `feed:` check is client-side — so nothing confirmed end to end that the
+     * name reaching the endpoint is the one it holds. A consumer pointed at
+     * the wrong feed must fail rather than read the right events by accident.
+     */
+    public function testAConsumerPointedAtAnotherFeedIsNotServedThisOne(): void
+    {
+        $this->producer->produce('a');
+
+        $consumer = new Consumer($this->source($this->store), $this->cursor, 'invalidator', feed: $this->name . '-other');
+
+        try {
+            $consumer->consume(fn (CloudEvent $event) => null);
+            $this->fail('The endpoint holds another feed, so the read should have failed');
+        } catch (Transport $error) {
+            $this->assertSame(404, $error->getCode());
+        }
+
+        $this->assertNull($consumer->position(), 'And nothing was recorded as read');
+    }
+
+    /**
+     * A name that needs encoding survives the round trip: `Remote` percent-
+     * encodes it into one path segment and the endpoint decodes that segment
+     * back. Asserting the URI string alone, as the encoding test does, cannot
+     * show that anything decodes it to the name the producer knows.
+     */
+    public function testAFeedNameThatNeedsEncodingStillRoutes(): void
+    {
+        $store = $this->store('a b/c');
+        (new Producer($store, 'urn:test'))->produce('a');
+
+        $consumer = new Consumer($this->source($store), $this->cursor, 'invalidator', feed: 'a b/c');
+
+        $this->assertSame(['a'], $this->drain($consumer));
+        $this->assertStringContainsString('a%20b%2Fc', $this->endpoint->recorder->last()['uri']);
+    }
+
+    /**
+     * The two halves of the media type handshake, checked against each other
+     * rather than each against a literal: the `Accept` the consumer sends is
+     * the `Content-Type` the producer answers with. Both now alias one
+     * constant, so this is what would notice if they stopped.
+     */
+    public function testTheAcceptSentIsTheContentTypeServed(): void
+    {
+        $this->producer->produce('a');
+
+        $this->drain($this->consumer());
+
+        $request = $this->endpoint->recorder->last();
+
+        $this->assertSame(Remote::MEDIA_TYPE, $request['headers']['Accept'] ?? null);
+        $this->assertSame(Remote::MEDIA_TYPE, $request['contentType'], 'The producer answers with what the consumer asked for');
     }
 
     public function testTheProducerCachesFullBatchesAndNothingElse(): void

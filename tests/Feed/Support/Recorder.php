@@ -16,7 +16,7 @@ use Psr\Http\Message\ResponseInterface;
  */
 class Recorder
 {
-    /** @var list<array{uri: string, method: string, headers: array<string, string>, timeout: float|null, status: int, cacheControl: string}> */
+    /** @var list<array{uri: string, method: string, headers: array<string, string>, timeout: float|null, status: int, cacheControl: string, contentType: string}> */
     public array $requests = [];
 
     /**
@@ -28,7 +28,7 @@ class Recorder
     public array $responses = [];
 
     /**
-     * @return array{uri: string, method: string, headers: array<string, string>, timeout: float|null, status: int, cacheControl: string}
+     * @return array{uri: string, method: string, headers: array<string, string>, timeout: float|null, status: int, cacheControl: string, contentType: string}
      */
     public function last(): array
     {
