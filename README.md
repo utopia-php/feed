@@ -246,6 +246,12 @@ A cursor is keyed by feed and consumer name, so one store serves every feed a
 service consumes. The store may be lossy — a lost position costs a replay, not
 a gap.
 
+The stored form is deliberately plain: the key is `feed:<feed>:cursor:<consumer>`
+and the value is the event id as a string. That is the format consumers have
+always written, so positions carry across an upgrade instead of replaying the
+retained feed, and `GET feed:edge:cursor:notifier` answers "where is this
+consumer?" from a shell.
+
 | Cursor | Use for |
 | --- | --- |
 | `Cursor\Cache` | A consumer with a [Utopia cache](https://github.com/utopia-php/cache) — the usual choice for a remote feed. Holds a position for 30 days (`Cursor\Cache::TTL`) unless saved again |

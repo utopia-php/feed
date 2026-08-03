@@ -589,6 +589,47 @@ class ConsumerTest extends TestCase
         $this->assertSame(0, $one->consume(fn (CloudEvent $event) => null));
     }
 
+    /**
+     * The other half of that rule, pinned because it is the boundary the
+     * design draws rather than an accident: a name is one logical reader, so
+     * two processes behind one name split the feed instead of both seeing it.
+     */
+    public function testTwoConsumersSharingANameSplitTheFeed(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $one = $this->consumer(batch: 1);
+        $two = $this->consumer(batch: 1);
+
+        $this->assertSame(['a'], $this->drain($one));
+        $this->assertSame(['b'], $this->drain($two), 'The second picks up after the first, it does not see a of its own');
+    }
+
+    /**
+     * And the cost of sharing a name, which no amount of coordination inside a
+     * single process can remove: each save is last-writer-wins, so a replica
+     * holding an older position drags the shared one backwards when it saves.
+     * At-least-once makes that a replay rather than a loss — the same is true of
+     * a reset one replica performs and another then recreates — but it is why
+     * every consumer gets its own name.
+     */
+    public function testAStaleConsumerSharingANameDragsThePositionBackwards(): void
+    {
+        $first = $this->producer->produce('a');
+        $second = $this->producer->produce('b');
+
+        $stale = $this->consumer(batch: 1);
+        $this->assertNull($stale->position(), 'Reads the shared position before the other replica moves it');
+
+        $ahead = $this->consumer();
+        $this->assertSame(['a', 'b'], $this->drain($ahead));
+        $this->assertSame($second, $this->cursor->load('edge', 'invalidator'));
+
+        $this->assertSame(['a'], $this->drain($stale), 'The stale replica polls from where it thought it was');
+        $this->assertSame($first, $this->cursor->load('edge', 'invalidator'), 'Its save wins, so the shared position regresses');
+    }
+
     public function testPositionIsNullBeforeTheFirstRun(): void
     {
         $this->assertNull($this->consumer()->position());
