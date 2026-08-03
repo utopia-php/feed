@@ -51,13 +51,27 @@ class Server
      */
     public function serve(array $query): Batch
     {
+        /** @var mixed $lastEventId */
         $lastEventId = $query[self::PARAM_LAST_EVENT_ID] ?? null;
-        $lastEventId = \is_string($lastEventId) && $lastEventId !== '' ? $lastEventId : null;
 
-        if ($lastEventId !== null && $lastEventId !== Readable::TIP && !Id::isValid($lastEventId)) {
+        // Absent and empty both mean "from the oldest retained event". Anything
+        // else present has to be a position or the sentinel — including values
+        // that are not strings at all: PHP parses `?lastEventId[]=1-0` into an
+        // array, and reading that as absent would answer a malformed parameter
+        // with a full replay of the retained feed. That is the most expensive
+        // response there is, and a caught-up consumer would take it for a
+        // sudden flood of new events rather than for the 400 it should be.
+        if ($lastEventId === null || $lastEventId === '') {
+            $lastEventId = null;
+        } elseif (!\is_string($lastEventId)) {
+            throw new Exception\Invalid('Invalid lastEventId: expected a string, got ' . \get_debug_type($lastEventId));
+        } elseif ($lastEventId !== Readable::TIP && !Id::isValid($lastEventId)) {
             throw new Exception\Invalid('Invalid lastEventId: ' . $lastEventId);
         }
 
+        // `limit` and `timeout` stay forgiving: both are the producer's to
+        // decide, so a garbage value falls back to the default rather than
+        // stalling a feed over something that does not affect correctness.
         $limit = $query[self::PARAM_LIMIT] ?? null;
         $timeout = $query[self::PARAM_TIMEOUT] ?? null;
 

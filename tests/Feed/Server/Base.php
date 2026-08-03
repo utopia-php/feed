@@ -262,6 +262,52 @@ abstract class Base extends TestCase
         $this->server->serve(['lastEventId' => 'not-a-position']);
     }
 
+    /**
+     * PHP parses `?lastEventId[]=1-0` into an array, so a `lastEventId` that
+     * is present need not be a string. Coercing one to "absent" would answer
+     * a malformed parameter with a full replay of the retained feed — the
+     * most expensive response the endpoint has, and one a caught-up consumer
+     * would read as a sudden flood of new events rather than as the 400 it is.
+     *
+     * @dataProvider notStrings
+     */
+    public function testServeRejectsALastEventIdThatIsNotEvenAString(mixed $lastEventId): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $this->expectException(Invalid::class);
+
+        $this->server->serve(['lastEventId' => $lastEventId]);
+    }
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function notStrings(): array
+    {
+        return [
+            'a repeated parameter' => [['1-0']],
+            'an empty array' => [[]],
+            'a nested map' => [['a' => '1-0']],
+            'a boolean' => [true],
+        ];
+    }
+
+    /**
+     * `limit` and `timeout` stay forgiving where `lastEventId` does not: both
+     * are the producer's to decide, so garbage falls back to the default
+     * rather than stalling a feed over something that cannot cause a wrong
+     * answer. An array is garbage like any other.
+     */
+    public function testServeFallsBackToTheDefaultsOnArrayLimitsAndTimeouts(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $this->assertCount(2, $this->server->serve(['limit' => ['5'], 'timeout' => ['0']]));
+    }
+
     public function testServeLetsTheTipSentinelThrough(): void
     {
         $this->producer->produce('a');
