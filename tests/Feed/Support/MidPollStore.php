@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Utopia\Tests\Unit\Support;
+namespace Utopia\Tests\Support;
 
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Store\Memory;

@@ -18,9 +18,9 @@ use Utopia\Feed\Producer;
 use Utopia\Feed\Readable;
 use Utopia\Feed\Remote;
 use Utopia\Feed\Server;
-use Utopia\Tests\Unit\Support\FakeTransport;
-use Utopia\Tests\Unit\Support\FeedServer;
-use Utopia\Tests\Unit\Support\MidPollStore;
+use Utopia\Tests\Support\FakeTransport;
+use Utopia\Tests\Support\FeedServer;
+use Utopia\Tests\Support\MidPollStore;
 
 class RemoteTest extends TestCase
 {
