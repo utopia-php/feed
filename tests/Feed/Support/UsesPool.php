@@ -23,6 +23,9 @@ trait UsesPool
     /** The pool's connection count, and so the number of concurrent borrows it allows. */
     protected const int POOL_SIZE = 4;
 
+    /** Seconds a borrow may wait for a free connection before the pool gives up. */
+    protected const float POOL_TIMEOUT = 3.0;
+
     /** @var UtopiaPool<\Redis|\RedisCluster>|null */
     private ?UtopiaPool $pool = null;
 
@@ -40,7 +43,7 @@ trait UsesPool
             $redis->connect((string) (\getenv('REDIS_HOST') ?: 'redis'), (int) (\getenv('REDIS_PORT') ?: 6379));
 
             return $redis;
-        });
+        }, self::POOL_TIMEOUT);
 
         return $pool;
     }
