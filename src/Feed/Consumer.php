@@ -61,10 +61,13 @@ class Consumer
     }
 
     /**
-     * The handler receives one event at a time and answers with an
-     * {@see Outcome}; returning anything else (or nothing) is
-     * {@see Outcome::Continue}, and throwing stops the run like
-     * {@see Outcome::Retry} with the error re-raised.
+     * The handler receives one event at a time and answers with its return
+     * value: an exact `false` means unprocessed — the run stops there, the
+     * position stays before the event, and the next run re-delivers it, the
+     * calm form of what throwing does. Anything else, including nothing,
+     * means processed. Only that exact `false` counts: handlers predate this
+     * contract and return all sorts of things, and a stray null or 0 must
+     * not stall the feed.
      *
      * @param callable(CloudEvent): mixed $handler
      * @return int How many events the position advanced past.
@@ -80,13 +83,13 @@ class Consumer
 
         foreach ($events as $event) {
             try {
-                $outcome = $handler($event);
+                $result = $handler($event);
             } catch (\Throwable $error) {
                 $failure = $error;
                 break;
             }
 
-            if ($outcome === Outcome::Retry) {
+            if ($result === false) {
                 break;
             }
 
@@ -106,10 +109,10 @@ class Consumer
     /**
      * Like {@see Consumer::consume()}, but the handler receives the whole
      * poll — up to `batch` events — as one `list<CloudEvent>`, and its
-     * {@see Outcome} answers for all of them: the position moves past the
-     * chunk or not at all. A handler that made partial progress before
-     * deciding {@see Outcome::Retry} can {@see Consumer::seek()} to the last
-     * event it completed; a move made mid-run is never saved over.
+     * return value answers for all of them: the position moves past the
+     * chunk or, on an exact `false`, not at all. A handler that made partial
+     * progress before answering `false` can {@see Consumer::seek()} to the
+     * last event it completed; a move made mid-run is never saved over.
      *
      * The handler is not called for an empty poll — a caught-up consumer has
      * nothing to decide about.
@@ -126,7 +129,7 @@ class Consumer
             return 0;
         }
 
-        if ($handler($events) === Outcome::Retry) {
+        if ($handler($events) === false) {
             return 0;
         }
 

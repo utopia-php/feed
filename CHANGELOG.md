@@ -4,18 +4,17 @@
 
 ### Consuming
 
-- `Outcome` — the words a handler answers with: `Continue` (processed, advance)
-  and `Retry` (stop here, same position, so the next run re-delivers — throwing
-  with the exception left out). A handler that returns anything else, or
-  nothing, has continued, so every existing handler keeps its meaning — and an
-  accidental `false` from the handler's last statement cannot stall the feed,
-  which is why this is an enum and not a boolean.
+- A handler's return value now answers for the event: an exact `false` means
+  unprocessed — the run stops there, same position, so the next run
+  re-delivers it (throwing with the exception left out). Anything else,
+  including nothing, means processed, so every existing handler keeps its
+  meaning: only that exact `false` counts, never a stray `null`, `0` or `''`.
 - `Consumer::consumeChunk(callable)` — the whole poll (up to `batch` events) as
   one `list<CloudEvent>` per call, for handlers whose work is cheaper in bulk.
-  One outcome answers for the chunk: the position moves past all of it or none
-  of it. A handler that made partial progress can `seek()` to the last event it
-  completed before returning `Retry` — a move made mid-run is never saved over.
-  The handler is not called for an empty poll.
+  One answer covers the chunk: the position moves past all of it or, on
+  `false`, none of it. A handler that made partial progress can `seek()` to the
+  last event it completed before returning `false` — a move made mid-run is
+  never saved over. The handler is not called for an empty poll.
 
 ## 0.1.0 — Initial release
 

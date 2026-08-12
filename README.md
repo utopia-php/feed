@@ -159,66 +159,68 @@ names its feed:
 $consumer = new Consumer($store, new Cursor\Redis($redis), name: 'audit-log');
 ```
 
-### Answering with an outcome
+### Answering with the return value
 
-A handler answers with an `Outcome`; anything else it returns — including
-nothing — reads as `Outcome::Continue`, so a handler that simply returns is
-saying "processed, move on":
+A handler's return value answers for the event: an exact `false` means
+"unprocessed" — the run stops there, the position stays before the event, and
+the next run re-delivers it. Anything else, including nothing, means
+"processed, move on", so a handler that simply returns keeps its meaning:
 
 | The handler | The position | The run |
 | --- | --- | --- |
-| returns `Outcome::Continue` (or anything else) | advances past the event | keeps going |
-| returns `Outcome::Retry` | stays before the event | ends, returns the count so far |
+| returns `false` — exactly | stays before the event | ends, returns the count so far |
+| returns anything else, or nothing | advances past the event | keeps going |
 | throws | stays before the event | ends, the error is re-raised |
 
-`Retry` and throwing are the same decision about the feed — this event is not
+`false` and throwing are the same decision about the feed — this event is not
 handled, re-deliver it — made in different moods: throwing is for accidents
-and surfaces the error, `Retry` is for failures the handler expected (a
-dependency it already knows is down) and returns calmly. It is an enum rather
-than a boolean on purpose: PHP APIs return `false` all the time, and a handler
-whose last statement happens to return one must not stall the feed by
-accident — retrying can only be said deliberately.
+and surfaces the error, `false` is for failures the handler expected (a
+dependency it already knows is down) and returns calmly.
 
 ```php
-use Utopia\Feed\Outcome;
-
-$consumer->consume(function (CloudEvent $event) use ($mailer): ?Outcome {
+$consumer->consume(function (CloudEvent $event) use ($mailer): bool {
     if (!$mailer->healthy()) {
-        return Outcome::Retry; // known-down dependency — same event next run
+        return false; // known-down dependency — same event next run
     }
 
     $mailer->send($event->data);
 
-    return null; // Continue
+    return true;
 });
 ```
+
+Only that exact `false` counts — `null`, `0` and `''` all mean processed — so
+no handler written before this contract can stall the feed. The flip side
+deserves a moment's care: PHP APIs answer `false` to mean failure, so a
+handler ending in `return $mailer->send($event->data);` says "retry until it
+sends". Write the `return` you mean.
 
 ### Consuming in chunks
 
 `consumeChunk()` is `consume()` with the whole poll — up to `batch` events —
 handed over as one `list<CloudEvent>`, for handlers whose work is cheaper in
 bulk: a multi-row upsert, one pipeline instead of a call per event. The
-outcome vocabulary is the same, but the answer covers the chunk: the position
-moves past all of it or none of it, so a retried chunk is re-delivered whole
-and an idempotent handler absorbs the overlap. The handler is not called for
-an empty poll.
+return value is read the same way, but the answer covers the chunk: the
+position moves past all of it or, on `false`, none of it, so an unprocessed
+chunk is re-delivered whole and an idempotent handler absorbs the overlap.
+The handler is not called for an empty poll.
 
 ```php
 $consumer = new Consumer($client, $cursor, name: 'projector', feed: 'edge', batch: 500);
 
-$consumer->consumeChunk(function (array $events) use ($db): ?Outcome {
+$consumer->consumeChunk(function (array $events) use ($db): bool {
     try {
         $db->upsertMany(\array_map(fn (CloudEvent $event) => $event->data, $events));
     } catch (DeadlockException) {
-        return Outcome::Retry; // transient — the same chunk comes back next run
+        return false; // transient — the same chunk comes back next run
     }
 
-    return null;
+    return true;
 });
 ```
 
 A chunk that failed midway does not have to give its progress back:
-`seek()` to the last event that succeeded before returning `Retry`, and the
+`seek()` to the last event that succeeded before returning `false`, and the
 next run starts strictly after it. A move made mid-run is never saved over,
 so the chunk's own end does not overwrite the seek on the way out.
 
@@ -289,8 +291,8 @@ be arranged away:
 Every one re-delivers; none skips. An idempotent handler absorbs a duplicate,
 whereas an event stepped over is gone.
 
-**Reject by throwing** (or by returning `Outcome::Retry` — the same decision,
-without an exception). The run stops there, the position stays before the
+**Reject by throwing** (or by returning `false` — the same decision, without
+an exception). The run stops there, the position stays before the
 failed event, and the next run retries it. Everything handled earlier in the
 run stays handled. A handler that keeps failing blocks everything behind it —
 intentionally: a feed is ordered, and stepping over a failure would apply

@@ -12,7 +12,6 @@ use Utopia\Feed\Appendable;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Exception\Invalid;
-use Utopia\Feed\Outcome;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Readable;
 use Utopia\Feed\Store;
@@ -279,8 +278,8 @@ abstract class Base extends TestCase
         $this->assertSame(2, $attempts, 'The failed event is retried, not dropped');
     }
 
-    /** Retry is throwing without the exception: same position, calm return. */
-    public function testRetryStopsTheRunAndKeepsTheProgressBeforeIt(): void
+    /** Returning false is throwing without the exception: same position, calm return. */
+    public function testAFalseReturnStopsTheRunAndKeepsTheProgressBeforeIt(): void
     {
         $first = $this->producer->produce('a');
         $this->producer->produce('b');
@@ -288,11 +287,30 @@ abstract class Base extends TestCase
 
         $consumer = $this->consumer();
 
-        $count = $consumer->consume(fn (CloudEvent $event): ?Outcome => $event->type === 'b' ? Outcome::Retry : null);
+        $count = $consumer->consume(fn (CloudEvent $event): bool => $event->type !== 'b');
 
-        $this->assertSame(1, $count, 'Only what came before the retry is committed');
-        $this->assertSame($first, $this->cursor->load($this->name, 'invalidator'), 'Progress before the retry is committed');
-        $this->assertSame(['b', 'c'], $this->drain($consumer), 'The retried event comes back first, nothing behind it is lost');
+        $this->assertSame(1, $count, 'Only what came before the false is committed');
+        $this->assertSame($first, $this->cursor->load($this->name, 'invalidator'), 'Progress before the false is committed');
+        $this->assertSame(['b', 'c'], $this->drain($consumer), 'The unprocessed event comes back first, nothing behind it is lost');
+    }
+
+    /**
+     * Only an exact false answers "unprocessed": handlers predate this
+     * contract and return all sorts of things — null, counts, empty strings —
+     * and none of them may stall the feed.
+     */
+    public function testOnlyAnExactFalseStopsTheRun(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $consumer = $this->consumer();
+
+        $this->assertSame(2, $consumer->consume(fn (CloudEvent $event) => 0), 'A falsy non-false still means processed');
+
+        $this->producer->produce('c');
+
+        $this->assertSame(1, $consumer->consumeChunk(fn (array $events) => ''), 'The chunk answer is judged the same way');
     }
 
     public function testDrainsABacklogInBatches(): void
@@ -382,15 +400,15 @@ abstract class Base extends TestCase
         $this->assertSame(['a', 'b'], $seen, 'The whole chunk comes back');
     }
 
-    public function testRetryRedeliversTheWholeChunkOnTheNextRun(): void
+    public function testAFalseReturnRedeliversTheWholeChunkOnTheNextRun(): void
     {
         $this->producer->produce('a');
         $this->producer->produce('b');
 
         $consumer = $this->consumer();
 
-        $this->assertSame(0, $consumer->consumeChunk(fn (array $events): Outcome => Outcome::Retry));
-        $this->assertNull($this->cursor->load($this->name, 'invalidator'), 'Retry commits nothing');
+        $this->assertSame(0, $consumer->consumeChunk(fn (array $events): bool => false));
+        $this->assertNull($this->cursor->load($this->name, 'invalidator'), 'A false answer commits nothing');
 
         $seen = [];
         $count = $consumer->consumeChunk(function (array $events) use (&$seen): void {
@@ -403,7 +421,7 @@ abstract class Base extends TestCase
 
     /**
      * The partial-progress pattern: a chunk that failed midway seeks to the
-     * last event it completed and asks for a retry, so only the remainder
+     * last event it completed and answers false, so only the remainder
      * comes back. The seek is the newer decision — the run must not save the
      * chunk's end over it.
      */
@@ -415,10 +433,10 @@ abstract class Base extends TestCase
 
         $consumer = $this->consumer();
 
-        $consumer->consumeChunk(function (array $events) use ($consumer, $second): Outcome {
+        $consumer->consumeChunk(function (array $events) use ($consumer, $second): bool {
             $consumer->seek($second);
 
-            return Outcome::Retry;
+            return false;
         });
 
         $this->assertSame($second, $consumer->position());
