@@ -159,6 +159,72 @@ names its feed:
 $consumer = new Consumer($store, new Cursor\Redis($redis), name: 'audit-log');
 ```
 
+### Answering with an outcome
+
+A handler answers with an `Outcome`; anything else it returns — including
+nothing — reads as `Outcome::Continue`, so a handler that simply returns is
+saying "processed, move on":
+
+| The handler | The position | The run |
+| --- | --- | --- |
+| returns `Outcome::Continue` (or anything else) | advances past the event | keeps going |
+| returns `Outcome::Skip` | advances past the event | keeps going |
+| returns `Outcome::Retry` | stays before the event | ends, returns the count so far |
+| throws | stays before the event | ends, the error is re-raised |
+
+`Retry` and throwing are the same decision about the feed — this event is not
+handled, re-deliver it — made in different moods: throwing is for accidents
+and surfaces the error, `Retry` is for failures the handler expected (a
+dependency it already knows is down) and returns calmly. `Skip` is the
+deliberate loss of an event, decided in code:
+
+```php
+use Utopia\Feed\Outcome;
+
+$consumer->consume(function (CloudEvent $event) use ($mailer): ?Outcome {
+    if ($event->data['address'] === null) {
+        return Outcome::Skip; // malformed forever — stepping over it is the decision
+    }
+
+    if (!$mailer->healthy()) {
+        return Outcome::Retry; // known-down dependency — same event next run
+    }
+
+    $mailer->send($event->data);
+
+    return null; // Continue
+});
+```
+
+### Consuming in chunks
+
+`consumeChunk()` is `consume()` with the whole poll — up to `batch` events —
+handed over as one `list<CloudEvent>`, for handlers whose work is cheaper in
+bulk: a multi-row upsert, one pipeline instead of a call per event. The
+outcome vocabulary is the same, but the answer covers the chunk: the position
+moves past all of it or none of it, so a retried chunk is re-delivered whole
+and an idempotent handler absorbs the overlap. The handler is not called for
+an empty poll.
+
+```php
+$consumer = new Consumer($client, $cursor, name: 'projector', feed: 'edge', batch: 500);
+
+$consumer->consumeChunk(function (array $events) use ($db): ?Outcome {
+    try {
+        $db->upsertMany(\array_map(fn (CloudEvent $event) => $event->data, $events));
+    } catch (DeadlockException) {
+        return Outcome::Retry; // transient — the same chunk comes back next run
+    }
+
+    return null;
+});
+```
+
+A chunk that failed midway does not have to give its progress back:
+`seek()` to the last event that succeeded before returning `Retry`, and the
+next run starts strictly after it. A move made mid-run is never saved over,
+so the chunk's own end does not overwrite the seek on the way out.
+
 ### Starting at the tip
 
 A consumer with no stored position starts at the oldest retained event. A
@@ -226,11 +292,13 @@ be arranged away:
 Every one re-delivers; none skips. An idempotent handler absorbs a duplicate,
 whereas an event stepped over is gone.
 
-**Reject by throwing.** The run stops there, the position stays before the
+**Reject by throwing** (or by returning `Outcome::Retry` — the same decision,
+without an exception). The run stops there, the position stays before the
 failed event, and the next run retries it. Everything handled earlier in the
 run stays handled. A handler that keeps failing blocks everything behind it —
 intentionally: a feed is ordered, and stepping over a failure would apply
-later events on top of state that was never updated.
+later events on top of state that was never updated. Stepping over is never
+implied; it is said explicitly, as `Outcome::Skip` or a `seek()`.
 
 **No position means the oldest retained event, never the tip** (unless the
 consumer opted into `Consumer::START_TIP`), so a consumer deployed after the producer

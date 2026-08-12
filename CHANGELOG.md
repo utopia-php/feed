@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Consuming
+
+- `Outcome` — the words a handler answers with: `Continue` (processed, advance),
+  `Skip` (cannot be processed and will not be retried — advance anyway, said
+  explicitly or not at all), and `Retry` (stop here, same position, so the next
+  run re-delivers — throwing with the exception left out). A handler that
+  returns anything else, or nothing, has continued, so every existing handler
+  keeps its meaning.
+- `Consumer::consumeChunk(callable)` — the whole poll (up to `batch` events) as
+  one `list<CloudEvent>` per call, for handlers whose work is cheaper in bulk.
+  One outcome answers for the chunk: the position moves past all of it or none
+  of it. A handler that made partial progress can `seek()` to the last event it
+  completed before returning `Retry` — a move made mid-run is never saved over.
+  The handler is not called for an empty poll.
+
 ## 0.1.0 — Initial release
 
 Pull-based HTTP event feeds ([http-feeds.org](https://www.http-feeds.org/)) for

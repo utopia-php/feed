@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Utopia\Feed;
 
 use Utopia\Client\Adapter;
+use Utopia\CloudEvents\CloudEvent;
 
 class Consumer
 {
@@ -59,19 +60,19 @@ class Consumer
         return $this->name;
     }
 
+    /**
+     * The handler receives one event at a time and answers with an
+     * {@see Outcome}; returning anything else (or nothing) is
+     * {@see Outcome::Continue}, and throwing stops the run like
+     * {@see Outcome::Retry} with the error re-raised.
+     *
+     * @param callable(CloudEvent): mixed $handler
+     * @return int How many events the position advanced past — skipped ones included.
+     */
     public function consume(callable $handler): int
     {
         $moved = $this->moved;
-
-        $events = $this->feed->poll(
-            $this->position() ?? $this->origin(),
-            \max(1, \min($this->batch, Readable::MAX_BATCH)),
-            \max(0, \min($this->timeout, Readable::MAX_TIMEOUT)),
-        );
-
-        if ($events === []) {
-            return 0;
-        }
+        $events = $this->poll();
 
         $handled = 0;
         $processed = null;
@@ -79,9 +80,13 @@ class Consumer
 
         foreach ($events as $event) {
             try {
-                $handler($event);
+                $outcome = $handler($event);
             } catch (\Throwable $error) {
                 $failure = $error;
+                break;
+            }
+
+            if ($outcome === Outcome::Retry) {
                 break;
             }
 
@@ -89,25 +94,74 @@ class Consumer
             $handled++;
         }
 
-        if ($processed !== null && $this->moved === $moved) {
-            $expected = $this->position;
-            $this->position = $processed;
-
-            // Conditional for the same reason as the $moved guard, but across
-            // instances: a save lands only if the position is still where this
-            // run started. Refused means another instance moved it — progress,
-            // a seek, or a reset — and that newer decision stands.
-            if (!$this->cursor->advance($this->feed->getName(), $this->name, $processed, $expected)) {
-                $this->position = null;
-                $this->restored = false;
-            }
-        }
+        $this->advance($processed, $moved);
 
         if ($failure !== null) {
             throw $failure;
         }
 
         return $handled;
+    }
+
+    /**
+     * Like {@see Consumer::consume()}, but the handler receives the whole
+     * poll — up to `batch` events — as one `list<CloudEvent>`, and its
+     * {@see Outcome} answers for all of them: the position moves past the
+     * chunk or not at all. A handler that made partial progress before
+     * deciding {@see Outcome::Retry} can {@see Consumer::seek()} to the last
+     * event it completed; a move made mid-run is never saved over.
+     *
+     * The handler is not called for an empty poll — a caught-up consumer has
+     * nothing to decide about.
+     *
+     * @param callable(list<CloudEvent>): mixed $handler
+     * @return int How many events the position advanced past — the chunk, or 0.
+     */
+    public function consumeChunk(callable $handler): int
+    {
+        $moved = $this->moved;
+        $events = $this->poll();
+
+        if ($events === []) {
+            return 0;
+        }
+
+        if ($handler($events) === Outcome::Retry) {
+            return 0;
+        }
+
+        $this->advance($events[\array_key_last($events)]->id, $moved);
+
+        return \count($events);
+    }
+
+    /** @return list<CloudEvent> */
+    private function poll(): array
+    {
+        return $this->feed->poll(
+            $this->position() ?? $this->origin(),
+            \max(1, \min($this->batch, Readable::MAX_BATCH)),
+            \max(0, \min($this->timeout, Readable::MAX_TIMEOUT)),
+        );
+    }
+
+    private function advance(?string $processed, int $moved): void
+    {
+        if ($processed === null || $this->moved !== $moved) {
+            return;
+        }
+
+        $expected = $this->position;
+        $this->position = $processed;
+
+        // Conditional for the same reason as the $moved guard, but across
+        // instances: a save lands only if the position is still where this
+        // run started. Refused means another instance moved it — progress,
+        // a seek, or a reset — and that newer decision stands.
+        if (!$this->cursor->advance($this->feed->getName(), $this->name, $processed, $expected)) {
+            $this->position = null;
+            $this->restored = false;
+        }
     }
 
     private function origin(): ?string

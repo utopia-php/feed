@@ -12,6 +12,7 @@ use Utopia\Feed\Appendable;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
 use Utopia\Feed\Exception\Invalid;
+use Utopia\Feed\Outcome;
 use Utopia\Feed\Producer;
 use Utopia\Feed\Readable;
 use Utopia\Feed\Store;
@@ -278,6 +279,52 @@ abstract class Base extends TestCase
         $this->assertSame(2, $attempts, 'The failed event is retried, not dropped');
     }
 
+    /**
+     * Skip is the in-band form of the seek() escape hatch: the handler has
+     * already decided the event cannot be processed, so it steps past it
+     * without stopping the run — and a stepped-over event is gone.
+     */
+    public function testSkipStepsPastOneEventWithoutStoppingTheRun(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('poison');
+        $last = $this->producer->produce('c');
+
+        $consumer = $this->consumer();
+        $seen = [];
+
+        $count = $consumer->consume(function (CloudEvent $event) use (&$seen): ?Outcome {
+            if ($event->type === 'poison') {
+                return Outcome::Skip;
+            }
+
+            $seen[] = $event->type;
+
+            return null;
+        });
+
+        $this->assertSame(3, $count, 'A skipped event still advances the position past it');
+        $this->assertSame(['a', 'c'], $seen);
+        $this->assertSame($last, $this->cursor->load($this->name, 'invalidator'));
+        $this->assertSame([], $this->drain($consumer), 'The skipped event does not come back');
+    }
+
+    /** Retry is throwing without the exception: same position, calm return. */
+    public function testRetryStopsTheRunAndKeepsTheProgressBeforeIt(): void
+    {
+        $first = $this->producer->produce('a');
+        $this->producer->produce('b');
+        $this->producer->produce('c');
+
+        $consumer = $this->consumer();
+
+        $count = $consumer->consume(fn (CloudEvent $event): ?Outcome => $event->type === 'b' ? Outcome::Retry : null);
+
+        $this->assertSame(1, $count, 'Only what came before the retry is committed');
+        $this->assertSame($first, $this->cursor->load($this->name, 'invalidator'), 'Progress before the retry is committed');
+        $this->assertSame(['b', 'c'], $this->drain($consumer), 'The retried event comes back first, nothing behind it is lost');
+    }
+
     public function testDrainsABacklogInBatches(): void
     {
         foreach (\range(1, 10) as $i) {
@@ -290,6 +337,173 @@ abstract class Base extends TestCase
         $this->assertSame(4, $consumer->consume(fn (CloudEvent $event) => null));
         $this->assertSame(2, $consumer->consume(fn (CloudEvent $event) => null));
         $this->assertSame(0, $consumer->consume(fn (CloudEvent $event) => null));
+    }
+
+    /**
+     * The chunk's event types, for asserting delivery.
+     *
+     * @param list<CloudEvent> $events
+     * @return list<string>
+     */
+    private static function types(array $events): array
+    {
+        return \array_map(static fn (CloudEvent $event): string => $event->type, $events);
+    }
+
+    public function testAChunkHandlerReceivesTheWholePollAndAdvancesPastIt(): void
+    {
+        $this->producer->produce('a');
+        $last = $this->producer->produce('b');
+
+        $consumer = $this->consumer();
+        $chunks = [];
+
+        $count = $consumer->consumeChunk(function (array $events) use (&$chunks): void {
+            $chunks[] = self::types($events);
+        });
+
+        $this->assertSame(2, $count);
+        $this->assertSame([['a', 'b']], $chunks, 'One call, the whole poll');
+        $this->assertSame($last, $this->cursor->load($this->name, 'invalidator'));
+        $this->assertSame($last, $consumer->position());
+    }
+
+    public function testChunksFollowTheBatchSetting(): void
+    {
+        foreach (\range(1, 10) as $i) {
+            $this->producer->produce('event-' . $i);
+        }
+
+        $consumer = $this->consumer(batch: 4);
+        $sizes = [];
+        $handler = function (array $events) use (&$sizes): void {
+            $sizes[] = \count($events);
+        };
+
+        $this->assertSame(4, $consumer->consumeChunk($handler));
+        $this->assertSame(4, $consumer->consumeChunk($handler));
+        $this->assertSame(2, $consumer->consumeChunk($handler));
+        $this->assertSame(0, $consumer->consumeChunk($handler));
+
+        $this->assertSame([4, 4, 2], $sizes, 'A caught-up poll never reaches the handler');
+    }
+
+    public function testAChunkHandlerThatThrowsLeavesThePositionAlone(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $consumer = $this->consumer();
+
+        try {
+            $consumer->consumeChunk(fn (array $events) => throw new \RuntimeException('nope'));
+            $this->fail('The handler failure should have been re-raised');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('nope', $error->getMessage());
+        }
+
+        $this->assertNull($this->cursor->load($this->name, 'invalidator'), 'A failed chunk commits nothing');
+
+        $seen = [];
+        $consumer->consumeChunk(function (array $events) use (&$seen): void {
+            $seen = self::types($events);
+        });
+
+        $this->assertSame(['a', 'b'], $seen, 'The whole chunk comes back');
+    }
+
+    public function testRetryRedeliversTheWholeChunkOnTheNextRun(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $consumer = $this->consumer();
+
+        $this->assertSame(0, $consumer->consumeChunk(fn (array $events): Outcome => Outcome::Retry));
+        $this->assertNull($this->cursor->load($this->name, 'invalidator'), 'Retry commits nothing');
+
+        $seen = [];
+        $count = $consumer->consumeChunk(function (array $events) use (&$seen): void {
+            $seen = self::types($events);
+        });
+
+        $this->assertSame(2, $count);
+        $this->assertSame(['a', 'b'], $seen);
+    }
+
+    public function testSkipAdvancesPastAChunkItCouldNotProcess(): void
+    {
+        $this->producer->produce('a');
+        $last = $this->producer->produce('b');
+
+        $consumer = $this->consumer();
+
+        $this->assertSame(2, $consumer->consumeChunk(fn (array $events): Outcome => Outcome::Skip));
+        $this->assertSame($last, $this->cursor->load($this->name, 'invalidator'), 'A skipped chunk is stepped over, not retried');
+
+        $this->producer->produce('c');
+
+        $seen = [];
+        $consumer->consumeChunk(function (array $events) use (&$seen): void {
+            $seen = self::types($events);
+        });
+
+        $this->assertSame(['c'], $seen, 'The next run starts after the skipped chunk');
+    }
+
+    /**
+     * The partial-progress pattern: a chunk that failed midway seeks to the
+     * last event it completed and asks for a retry, so only the remainder
+     * comes back. The seek is the newer decision — the run must not save the
+     * chunk's end over it.
+     */
+    public function testASeekMadeInsideAChunkHandlerIsNotOverwritten(): void
+    {
+        $this->producer->produce('a');
+        $second = $this->producer->produce('b');
+        $this->producer->produce('c');
+
+        $consumer = $this->consumer();
+
+        $consumer->consumeChunk(function (array $events) use ($consumer, $second): Outcome {
+            $consumer->seek($second);
+
+            return Outcome::Retry;
+        });
+
+        $this->assertSame($second, $consumer->position());
+        $this->assertSame($second, $this->cursor->load($this->name, 'invalidator'));
+
+        $seen = [];
+        $consumer->consumeChunk(function (array $events) use (&$seen): void {
+            $seen = self::types($events);
+        });
+
+        $this->assertSame(['c'], $seen, 'The run resumes after the seeked id, not before the chunk');
+    }
+
+    /** The moved guard, on the path where the chunk does try to save. */
+    public function testAChunkRunDoesNotSaveOverASeekEvenWhenItContinues(): void
+    {
+        $this->producer->produce('a');
+        $second = $this->producer->produce('b');
+        $this->producer->produce('c');
+
+        $consumer = $this->consumer();
+
+        $consumer->consumeChunk(function (array $events) use ($consumer, $second): void {
+            $consumer->seek($second);
+        });
+
+        $this->assertSame($second, $consumer->position(), 'The seek stands over the chunk\'s own end');
+        $this->assertSame($second, $this->cursor->load($this->name, 'invalidator'));
+
+        $seen = [];
+        $consumer->consumeChunk(function (array $events) use (&$seen): void {
+            $seen = self::types($events);
+        });
+
+        $this->assertSame(['c'], $seen);
     }
 
     public function testTipStartDoesNotAnnounceTheBacklog(): void
