@@ -240,6 +240,58 @@ class ConsumerTest extends TestCase
     }
 
     /**
+     * The chunk was handled, so the save failure comes after it — the same
+     * promise consume() makes, on the chunk path: this run keeps its progress
+     * in memory and only a restart replays.
+     */
+    public function testAChunkPositionThatCannotBeSavedIsRaisedAfterTheChunkWasHandled(): void
+    {
+        $this->producer->produce('a');
+        $this->producer->produce('b');
+
+        $consumer = $this->consumer(new FailingCursor(onSave: true));
+        $seen = [];
+
+        try {
+            $consumer->consumeChunk(function (array $events) use (&$seen): void {
+                $seen = \array_map(static fn (CloudEvent $event): string => $event->type, $events);
+            });
+            $this->fail('The store failure should have been raised');
+        } catch (Transport $error) {
+            $this->assertSame('Cursor store is unavailable', $error->getMessage());
+        }
+
+        $this->assertSame(['a', 'b'], $seen, 'The handler still saw the chunk');
+        $this->assertNotNull($consumer->position(), 'The in-memory position still moved');
+    }
+
+    /** The conditional save guards the chunk path too: a stale chunk run concedes. */
+    public function testAStaleChunkRunCannotUndoAnotherInstancesProgress(): void
+    {
+        $one = $this->consumer();
+        $two = $this->consumer();
+
+        // An empty first run restores "no position yet" on both instances...
+        $this->assertSame(0, $one->consumeChunk(fn (array $events) => null));
+        $this->assertSame(0, $two->consumeChunk(fn (array $events) => null));
+
+        foreach (['a', 'b', 'c', 'd'] as $type) {
+            $this->producer->produce($type);
+        }
+
+        // ...then the first instance gets ahead.
+        $one->consumeChunk(fn (array $events) => null);
+        $ahead = $one->position();
+        $this->assertNotNull($ahead);
+
+        // The stale instance re-handles the chunk (at-least-once), but its
+        // save is refused rather than moving the shared position back.
+        $two->consumeChunk(fn (array $events) => null);
+        $this->assertSame($ahead, $this->cursor->load('edge', 'invalidator'));
+        $this->assertSame($ahead, $two->position(), 'Having conceded, it adopts the shared position');
+    }
+
+    /**
      * A seek that did not persist must not look like one that did: the store
      * failure surfaces, and the in-memory position stays where it was.
      */

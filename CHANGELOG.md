@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.1 — Chunk consumption and handler answers
+
+### Consuming
+
+- A handler's return value now answers for the event: an exact `false` means
+  unprocessed — the run stops there, same position, so the next run
+  re-delivers it (throwing with the exception left out). Anything else,
+  including nothing, means processed, so every existing handler keeps its
+  meaning: only that exact `false` counts, never a stray `null`, `0` or `''`.
+- `Consumer::consumeChunk(callable)` — the whole poll (up to `batch` events) as
+  one `list<CloudEvent>` per call, for handlers whose work is cheaper in bulk.
+  One answer covers the chunk: the position moves past all of it or, on
+  `false`, none of it. A handler that made partial progress can `seek()` to the
+  last event it completed before returning `false` — a move made mid-run is
+  never saved over. The handler is not called for an empty poll.
+
 ## 0.1.0 — Initial release
 
 Pull-based HTTP event feeds ([http-feeds.org](https://www.http-feeds.org/)) for
