@@ -70,7 +70,12 @@ class Consumer
      * not stall the feed.
      *
      * @param callable(CloudEvent): mixed $handler
-     * @return int How many events the position advanced past.
+     * @return int How many events the handler processed this run. The
+     *             position follows it past the last of them — unless it was
+     *             moved by hand mid-run ({@see Consumer::seek()},
+     *             {@see Consumer::reset()}) or another instance moved it
+     *             first, in which case that newer decision stands and this
+     *             count does not describe it.
      */
     public function consume(callable $handler): int
     {
@@ -118,7 +123,9 @@ class Consumer
      * nothing to decide about.
      *
      * @param callable(list<CloudEvent>): mixed $handler
-     * @return int How many events the position advanced past — the chunk, or 0.
+     * @return int How many events the handler processed — the chunk, or 0 on
+     *             `false`. As in {@see Consumer::consume()}, a position moved
+     *             by hand mid-run is not described by this count.
      */
     public function consumeChunk(callable $handler): int
     {

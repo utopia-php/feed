@@ -459,10 +459,11 @@ abstract class Base extends TestCase
 
         $consumer = $this->consumer();
 
-        $consumer->consumeChunk(function (array $events) use ($consumer, $second): void {
+        $count = $consumer->consumeChunk(function (array $events) use ($consumer, $second): void {
             $consumer->seek($second);
         });
 
+        $this->assertSame(3, $count, 'The count is the handler\'s progress; the seek owns the position');
         $this->assertSame($second, $consumer->position(), 'The seek stands over the chunk\'s own end');
         $this->assertSame($second, $this->cursor->load($this->name, 'invalidator'));
 
