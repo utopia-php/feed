@@ -67,7 +67,7 @@ class Consumer
      * {@see Outcome::Retry} with the error re-raised.
      *
      * @param callable(CloudEvent): mixed $handler
-     * @return int How many events the position advanced past — skipped ones included.
+     * @return int How many events the position advanced past.
      */
     public function consume(callable $handler): int
     {

@@ -10,20 +10,18 @@ namespace Utopia\Feed;
  *
  * Returning nothing decides too: a handler that returns normally without an
  * Outcome has continued, so every handler written before this enum existed
- * keeps its meaning. Throwing is the fourth word in the vocabulary — the
+ * keeps its meaning. Throwing is the third word in the vocabulary — the
  * position stays, like Retry, and the error reaches the caller.
+ *
+ * Deliberately an enum rather than a boolean: PHP APIs return false all the
+ * time, so a handler whose last statement happens to return one must not
+ * acquire retry semantics by accident — a persistent false would stall the
+ * feed silently. Retry can only be said on purpose.
  */
 enum Outcome
 {
     /** Processed — advance the position past it. */
     case Continue;
-
-    /**
-     * Could not be processed, and retrying will not change that — advance
-     * anyway. The decision to lose an event is the handler's to make, so it
-     * is never implied: only this explicit word steps over a failure.
-     */
-    case Skip;
 
     /**
      * Something is wrong beyond this event — stop the run here. The position

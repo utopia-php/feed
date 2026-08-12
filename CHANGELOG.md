@@ -4,12 +4,12 @@
 
 ### Consuming
 
-- `Outcome` — the words a handler answers with: `Continue` (processed, advance),
-  `Skip` (cannot be processed and will not be retried — advance anyway, said
-  explicitly or not at all), and `Retry` (stop here, same position, so the next
-  run re-delivers — throwing with the exception left out). A handler that
-  returns anything else, or nothing, has continued, so every existing handler
-  keeps its meaning.
+- `Outcome` — the words a handler answers with: `Continue` (processed, advance)
+  and `Retry` (stop here, same position, so the next run re-delivers — throwing
+  with the exception left out). A handler that returns anything else, or
+  nothing, has continued, so every existing handler keeps its meaning — and an
+  accidental `false` from the handler's last statement cannot stall the feed,
+  which is why this is an enum and not a boolean.
 - `Consumer::consumeChunk(callable)` — the whole poll (up to `batch` events) as
   one `list<CloudEvent>` per call, for handlers whose work is cheaper in bulk.
   One outcome answers for the chunk: the position moves past all of it or none

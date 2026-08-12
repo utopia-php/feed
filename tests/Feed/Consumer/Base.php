@@ -279,36 +279,6 @@ abstract class Base extends TestCase
         $this->assertSame(2, $attempts, 'The failed event is retried, not dropped');
     }
 
-    /**
-     * Skip is the in-band form of the seek() escape hatch: the handler has
-     * already decided the event cannot be processed, so it steps past it
-     * without stopping the run — and a stepped-over event is gone.
-     */
-    public function testSkipStepsPastOneEventWithoutStoppingTheRun(): void
-    {
-        $this->producer->produce('a');
-        $this->producer->produce('poison');
-        $last = $this->producer->produce('c');
-
-        $consumer = $this->consumer();
-        $seen = [];
-
-        $count = $consumer->consume(function (CloudEvent $event) use (&$seen): ?Outcome {
-            if ($event->type === 'poison') {
-                return Outcome::Skip;
-            }
-
-            $seen[] = $event->type;
-
-            return null;
-        });
-
-        $this->assertSame(3, $count, 'A skipped event still advances the position past it');
-        $this->assertSame(['a', 'c'], $seen);
-        $this->assertSame($last, $this->cursor->load($this->name, 'invalidator'));
-        $this->assertSame([], $this->drain($consumer), 'The skipped event does not come back');
-    }
-
     /** Retry is throwing without the exception: same position, calm return. */
     public function testRetryStopsTheRunAndKeepsTheProgressBeforeIt(): void
     {
@@ -429,26 +399,6 @@ abstract class Base extends TestCase
 
         $this->assertSame(2, $count);
         $this->assertSame(['a', 'b'], $seen);
-    }
-
-    public function testSkipAdvancesPastAChunkItCouldNotProcess(): void
-    {
-        $this->producer->produce('a');
-        $last = $this->producer->produce('b');
-
-        $consumer = $this->consumer();
-
-        $this->assertSame(2, $consumer->consumeChunk(fn (array $events): Outcome => Outcome::Skip));
-        $this->assertSame($last, $this->cursor->load($this->name, 'invalidator'), 'A skipped chunk is stepped over, not retried');
-
-        $this->producer->produce('c');
-
-        $seen = [];
-        $consumer->consumeChunk(function (array $events) use (&$seen): void {
-            $seen = self::types($events);
-        });
-
-        $this->assertSame(['c'], $seen, 'The next run starts after the skipped chunk');
     }
 
     /**

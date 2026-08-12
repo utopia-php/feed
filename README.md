@@ -168,24 +168,21 @@ saying "processed, move on":
 | The handler | The position | The run |
 | --- | --- | --- |
 | returns `Outcome::Continue` (or anything else) | advances past the event | keeps going |
-| returns `Outcome::Skip` | advances past the event | keeps going |
 | returns `Outcome::Retry` | stays before the event | ends, returns the count so far |
 | throws | stays before the event | ends, the error is re-raised |
 
 `Retry` and throwing are the same decision about the feed — this event is not
 handled, re-deliver it — made in different moods: throwing is for accidents
 and surfaces the error, `Retry` is for failures the handler expected (a
-dependency it already knows is down) and returns calmly. `Skip` is the
-deliberate loss of an event, decided in code:
+dependency it already knows is down) and returns calmly. It is an enum rather
+than a boolean on purpose: PHP APIs return `false` all the time, and a handler
+whose last statement happens to return one must not stall the feed by
+accident — retrying can only be said deliberately.
 
 ```php
 use Utopia\Feed\Outcome;
 
 $consumer->consume(function (CloudEvent $event) use ($mailer): ?Outcome {
-    if ($event->data['address'] === null) {
-        return Outcome::Skip; // malformed forever — stepping over it is the decision
-    }
-
     if (!$mailer->healthy()) {
         return Outcome::Retry; // known-down dependency — same event next run
     }
@@ -298,7 +295,7 @@ failed event, and the next run retries it. Everything handled earlier in the
 run stays handled. A handler that keeps failing blocks everything behind it —
 intentionally: a feed is ordered, and stepping over a failure would apply
 later events on top of state that was never updated. Stepping over is never
-implied; it is said explicitly, as `Outcome::Skip` or a `seek()`.
+implied; it is a `seek()`, said explicitly.
 
 **No position means the oldest retained event, never the tip** (unless the
 consumer opted into `Consumer::START_TIP`), so a consumer deployed after the producer
