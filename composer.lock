@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "bc6b4e541cacdab3dbc6bf0dc5bee7fc",
+    "content-hash": "cb58c16b089d041f13e3588fb7c9f132",
     "packages": [
         {
             "name": "brick/math",
@@ -1879,22 +1879,22 @@
         },
         {
             "name": "utopia-php/cache",
-            "version": "4.0.1",
+            "version": "5.0.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/utopia-php/cache.git",
-                "reference": "6f8cb03a5cb76e95b95a05103cd14cf782b8060f"
+                "reference": "0d0752785fc81b5afd6571f4291763166a6532bc"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/utopia-php/cache/zipball/6f8cb03a5cb76e95b95a05103cd14cf782b8060f",
-                "reference": "6f8cb03a5cb76e95b95a05103cd14cf782b8060f",
+                "url": "https://api.github.com/repos/utopia-php/cache/zipball/0d0752785fc81b5afd6571f4291763166a6532bc",
+                "reference": "0d0752785fc81b5afd6571f4291763166a6532bc",
                 "shasum": ""
             },
             "require": {
                 "ext-json": "*",
                 "php": ">=8.4",
-                "utopia-php/circuit-breaker": "^0.3",
+                "utopia-php/circuit-breaker": "^0.4",
                 "utopia-php/pools": "^2.0",
                 "utopia-php/telemetry": "^0.4"
             },
@@ -1932,32 +1932,29 @@
             ],
             "support": {
                 "issues": "https://github.com/utopia-php/cache/issues",
-                "source": "https://github.com/utopia-php/cache/tree/4.0.1"
+                "source": "https://github.com/utopia-php/cache/tree/5.0.0"
             },
-            "time": "2026-08-04T00:06:02+00:00"
+            "time": "2026-08-21T11:04:48+00:00"
         },
         {
             "name": "utopia-php/circuit-breaker",
-            "version": "0.3.1",
+            "version": "0.4.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/utopia-php/circuit-breaker.git",
-                "reference": "db5d77f6c99ebce2ee81bd8ed4ae8f41bd2b0828"
+                "reference": "c6d93c7ba9d895cf906360e000f74ff762d83e17"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/utopia-php/circuit-breaker/zipball/db5d77f6c99ebce2ee81bd8ed4ae8f41bd2b0828",
-                "reference": "db5d77f6c99ebce2ee81bd8ed4ae8f41bd2b0828",
+                "url": "https://api.github.com/repos/utopia-php/circuit-breaker/zipball/c6d93c7ba9d895cf906360e000f74ff762d83e17",
+                "reference": "c6d93c7ba9d895cf906360e000f74ff762d83e17",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.2"
             },
             "require-dev": {
-                "laravel/pint": "^1.29",
-                "phpstan/phpstan": "^2.1",
-                "phpunit/phpunit": "^10.0",
-                "utopia-php/telemetry": "^0.4"
+                "utopia-php/telemetry": "^0.4.6"
             },
             "suggest": {
                 "ext-opentelemetry": "Required by utopia-php/telemetry when using OpenTelemetry metrics.",
@@ -1969,7 +1966,7 @@
             "type": "library",
             "autoload": {
                 "psr-4": {
-                    "Utopia\\CircuitBreaker\\": "src/CircuitBreaker"
+                    "Utopia\\CircuitBreaker\\": "src/CircuitBreaker/"
                 }
             },
             "notification-url": "https://packagist.org/downloads/",
@@ -1994,9 +1991,9 @@
             ],
             "support": {
                 "issues": "https://github.com/utopia-php/circuit-breaker/issues",
-                "source": "https://github.com/utopia-php/circuit-breaker/tree/0.3.1"
+                "source": "https://github.com/utopia-php/circuit-breaker/tree/0.4.0"
             },
-            "time": "2026-05-29T12:12:23+00:00"
+            "time": "2026-08-21T10:20:24+00:00"
         },
         {
             "name": "utopia-php/client",
