@@ -93,6 +93,11 @@ abstract class FakeClient implements ClientAdapter
         return clone $this;
     }
 
+    public function withFollowRedirects(bool $enabled = true): static
+    {
+        return clone $this;
+    }
+
     /**
      * Feeds are read buffered — a batch is bounded by `limit`, so there is
      * nothing to stream.
