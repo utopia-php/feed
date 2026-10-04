@@ -1,6 +1,8 @@
 # Utopia Feed
 
-[![Build Status](https://github.com/utopia-php/feed/actions/workflows/tests.yml/badge.svg)](https://github.com/utopia-php/feed/actions)
+> [!IMPORTANT]
+> This repository is a read-only mirror of `packages/feed` in Appwrite's private Cloud repository (appwrite-labs/cloud). Development happens there, so pull requests and issues opened here are closed automatically.
+
 [![Discord](https://img.shields.io/discord/564160730845151244)](https://appwrite.io/discord)
 
 Utopia Feed moves events between services with **pull-based HTTP event feeds**
@@ -119,8 +121,8 @@ held request that returns the moment an event lands (long polling — the
 producer does the waiting):
 
 ```php
-use Utopia\Client;
 use Utopia\Client\Adapter\Curl\Client as Curl;
+use Utopia\Client\Client;
 use Utopia\CloudEvents\CloudEvent;
 use Utopia\Feed\Consumer;
 use Utopia\Feed\Cursor;
@@ -445,55 +447,27 @@ builds over its client. Services never need any of them directly.
 ## Tests
 
 The suite is organized around behaviour, not classes: each component has one
-abstract scenario suite — `tests/Feed/Producer/Base.php`,
-`tests/Feed/Server/Base.php`, `tests/Feed/Consumer/Base.php` — and every
-adapter extends it, so a passing adapter suite means that adapter honours the
-whole contract. Producer and Server run per store (`memory`, `cache`, `redis`,
-`pool`); Consumer runs per cursor plus once through the real HTTP wire code
-(`http`). What remains in `tests/Feed/Unit` are the cases only a fake can
-provoke: a cursor store that is down, a body that is not a batch, a backend
-that was never configured.
+abstract scenario suite — `tests/Producer/Base.php`, `tests/Server/Base.php`,
+`tests/Consumer/Base.php`, `tests/Cursor/Base.php` — and every adapter extends
+it, so a passing adapter suite means that adapter honours the whole contract.
+The memory, cache and HTTP adapters run in the `unit` suite; the Redis and
+pooled Redis adapters run the same scenarios in the `e2e` suite
+(`tests/E2E`) against the Redis in `docker-compose.yml`. What remains in
+`tests/Unit` are the cases only a fake can provoke: a cursor store that is
+down, a body that is not a batch, a backend that was never configured.
 
-The service-free suites need no Redis, but `utopia-php/cache` declares
-`ext-redis` and `ext-memcached` and `utopia-php/telemetry` declares
-`ext-protobuf`, none of which those suites touch. Install past exactly those
-rather than with a blanket `--ignore-platform-reqs`, which would also skip the
-PHP version check this library actually depends on:
+The package is developed in `packages/feed` of appwrite-labs/cloud, which supplies PHPUnit and the other QA tools. From that repository's root, `bin/monorepo test feed` runs the unit suite and then the e2e suite against this package's `docker-compose.yml`; `bin/monorepo check feed --fix` runs Pint, PHPStan and Rector.
+
+On a standalone checkout of this mirror, the manifest no longer pulls in PHPUnit, so add it first:
 
 ```bash
-composer install \
-    --ignore-platform-req=ext-redis \
-    --ignore-platform-req=ext-memcached \
-    --ignore-platform-req=ext-protobuf
-composer test          # unit + memory + cache + http
+composer install
+composer require --dev phpunit/phpunit:^12
+composer test          # unit: no services
+docker compose up -d --wait
+composer test:e2e      # e2e: Redis on 127.0.0.1:16380, needs ext-redis
+docker compose down -v
 ```
-
-The `redis` and `pool` suites run the same scenarios against a real Redis, and
-static analysis needs `ext-redis`, so both run in the container:
-
-```bash
-docker compose up -d
-docker compose exec tests composer test:redis
-docker compose exec tests composer test:pool
-docker compose exec tests composer check
-```
-
-CI runs every suite as its own job, so a failing adapter is visible by name.
-
-Coverage is measured over `src/` with [pcov](https://github.com/krakjoe/pcov),
-which the test image carries loaded but switched off so ordinary runs are
-unaffected:
-
-```bash
-docker compose exec tests composer coverage      # service-free suites, ~8s
-docker compose exec tests composer coverage:all  # every suite, needs Redis
-```
-
-CI prints the full report on every run. There is no threshold: the number is
-there to be read, and a badly chosen gate is worse than none.
-
-To test another PHP version, build with `PHP_VERSION=8.6 docker compose build`,
-and add it to the `php-versions` matrix in `.github/workflows/tests.yml`.
 
 ## System requirements
 
